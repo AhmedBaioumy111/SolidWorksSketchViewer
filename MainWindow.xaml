@@ -1,0 +1,727 @@
+﻿<Window x:Class="SolidWorksSketchViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SolidWorksSketchViewer"
+        mc:Ignorable="d"
+        Title="SOLIDWORKS Sketch Viewer" Height="800" Width="1200"
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing">
+
+    <Window.Resources>
+        <!-- Add converter explicitly -->
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+
+        <!-- Futuristic gradient colors -->
+        <LinearGradientBrush x:Key="PrimaryGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#121E35" Offset="0.0"/>
+            <GradientStop Color="#1C2E51" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="SecondaryGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#162238" Offset="0.0"/>
+            <GradientStop Color="#213654" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="HeaderGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#112240" Offset="0.0"/>
+            <GradientStop Color="#1A3866" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#0088FF" Offset="0.0"/>
+            <GradientStop Color="#00C2FF" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="HighlightGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#00B7FF" Offset="0.0"/>
+            <GradientStop Color="#0095FF" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="ButtonGradient" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#0095E9" Offset="0.0"/>
+            <GradientStop Color="#0070B3" Offset="1.0"/>
+        </LinearGradientBrush>
+
+        <SolidColorBrush x:Key="TextPrimaryColor" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="TextSecondaryColor" Color="#AAC4F5"/>
+        <SolidColorBrush x:Key="BorderColor" Color="#1F4068"/>
+        <SolidColorBrush x:Key="BlackOverlay" Color="#BB000000"/>
+
+        <!-- Button Style -->
+        <Style x:Key="FuturisticButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource ButtonGradient}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="20,12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.4" BlurRadius="5" Color="#003362"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="25"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                Effect="{TemplateBinding Effect}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource HighlightGradient}"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.6" BlurRadius="8" Color="#004A8C"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AccentGradient}"/>
+                    <Setter Property="Opacity" Value="0.85"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.4"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- TextBox Style -->
+        <Style x:Key="FuturisticTextBox" TargetType="TextBox">
+            <Setter Property="Background" Value="#223A59"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,12"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="25"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}">
+                            <ScrollViewer x:Name="PART_ContentHost"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ListBox Style -->
+        <Style x:Key="FuturisticListBox" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <Border Background="Transparent" 
+                                BorderThickness="0">
+                            <ScrollViewer Padding="0" Focusable="False">
+                                <StackPanel IsItemsHost="True" Margin="0,8,0,0"/>
+                            </ScrollViewer>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ListBoxItem Style -->
+        <Style x:Key="FuturisticListBoxItem" TargetType="ListBoxItem">
+            <Setter Property="Background" Value="#25304A"/>
+            <Setter Property="Padding" Value="16,13"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" 
+                                CornerRadius="12"
+                                BorderThickness="0"
+                                Effect="{TemplateBinding Effect}"
+                                BorderBrush="{TemplateBinding BorderBrush}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource AccentGradient}"/>
+                                <Setter TargetName="Border" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.4" BlurRadius="8" Color="#004A8C"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#30415F"/>
+                                <Setter TargetName="Border" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.2" BlurRadius="5" Color="#001E39"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- GridSplitter Style -->
+        <Style x:Key="FuturisticGridSplitter" TargetType="GridSplitter">
+            <Setter Property="Background" Value="{StaticResource AccentGradient}"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="Width" Value="3"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="1.5"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ListView Style -->
+        <Style x:Key="FuturisticListView" TargetType="ListView">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+
+        <!-- DataGrid header style -->
+        <Style x:Key="DimensionHeaderStyle" TargetType="GridViewColumnHeader">
+            <Setter Property="Background" Value="#283E5D"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridViewColumnHeader">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderThickness="0" 
+                                Padding="{TemplateBinding Padding}">
+                            <TextBlock Text="{TemplateBinding Content}" 
+                                       FontWeight="{TemplateBinding FontWeight}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dimension type icons -->
+        <DataTemplate x:Key="DimensionTypeTemplate">
+            <StackPanel Orientation="Horizontal">
+                <Border Width="24" Height="24" CornerRadius="12" Margin="0,0,8,0">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#0088FF" Offset="0"/>
+                            <GradientStop Color="#00B7FF" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <TextBlock Text="{Binding Type, Converter={StaticResource DimensionTypeToIconConverter}}" 
+                               Foreground="White" 
+                               FontFamily="Segoe MDL2 Assets" 
+                               HorizontalAlignment="Center" 
+                               VerticalAlignment="Center"
+                               FontSize="14"/>
+                </Border>
+                <TextBlock Text="{Binding Type}" VerticalAlignment="Center" Foreground="{StaticResource TextPrimaryColor}"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Background="{StaticResource PrimaryGradient}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource HeaderGradient}" Padding="30,22" Effect="{StaticResource SoftShadowEffect}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <!-- Logo/App Icon -->
+                    <Path Data="M12,2L1,21H23L12,2M12,6L19.53,19H4.47L12,6" 
+                          Fill="{StaticResource AccentGradient}" 
+                          Width="36" 
+                          Height="36" 
+                          Stretch="Uniform" 
+                          Margin="0,0,16,0"/>
+
+                    <StackPanel Orientation="Vertical">
+                        <TextBlock Text="SOLIDWORKS Sketch Viewer" 
+                                   FontSize="24" 
+                                   FontWeight="SemiBold" 
+                                   Foreground="{StaticResource TextPrimaryColor}" 
+                                   FontFamily="Segoe UI"/>
+                        <TextBlock Text="Browse and explore sketches in your SOLIDWORKS files" 
+                                   FontSize="14" 
+                                   Margin="0,5,0,0" 
+                                   Foreground="{StaticResource TextSecondaryColor}" 
+                                   FontFamily="Segoe UI Light"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Border Background="#223A59" 
+                            CornerRadius="25" 
+                            Width="450"
+                            Height="45">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox Grid.Column="0" 
+                                     Style="{StaticResource FuturisticTextBox}"
+                                     Text="{Binding FilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     IsReadOnly="True"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     VerticalContentAlignment="Center"
+                                     Foreground="{StaticResource TextPrimaryColor}"/>
+
+                            <Button Grid.Column="1" 
+                                    Content="Browse" 
+                                    Style="{StaticResource FuturisticButton}" 
+                                    Command="{Binding BrowseFileCommand}"
+                                    Height="45"
+                                    Width="110"
+                                    Margin="0"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1" Margin="30">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sketch List -->
+            <Border Grid.Column="0" 
+                    Background="{StaticResource SecondaryGradient}" 
+                    CornerRadius="16" 
+                    Padding="20" 
+                    Effect="{StaticResource SoftShadowEffect}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" 
+                               Text="Sketches" 
+                               FontSize="22" 
+                               FontWeight="SemiBold" 
+                               Margin="5,0,0,20" 
+                               Foreground="{StaticResource TextPrimaryColor}"
+                               FontFamily="Segoe UI"/>
+
+                    <ListBox Grid.Row="1" 
+                             ItemsSource="{Binding CurrentDocument.Sketches}"
+                             SelectedItem="{Binding SelectedSketch, Mode=TwoWay}"
+                             Style="{StaticResource FuturisticListBox}"
+                             ItemContainerStyle="{StaticResource FuturisticListBoxItem}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Sketch Icon -->
+                                    <Border Grid.Column="0" 
+                                            Width="36" 
+                                            Height="36" 
+                                            CornerRadius="8" 
+                                            Background="#1E253A" 
+                                            Margin="0,0,12,0"
+                                            BorderThickness="1"
+                                            BorderBrush="#3A4665">
+                                        <Path Data="M3,17V22H8L17,13L12,8L3,17M22.85,14.19L21.87,15.17L19.83,13.13L20.81,12.15C21,11.95 21.33,11.95 21.53,12.15L22.85,13.47C23.05,13.67 23.05,14 22.85,14.19Z" 
+                                              Fill="#64B9FF" 
+                                              Width="18" 
+                                              Height="18" 
+                                              Stretch="Uniform" 
+                                              HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"/>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" 
+                                                   Foreground="{StaticResource TextPrimaryColor}" 
+                                                   FontSize="14" 
+                                                   FontWeight="Medium"/>
+                                        <TextBlock Text="{Binding FeatureType}" 
+                                                   Foreground="{StaticResource TextSecondaryColor}" 
+                                                   FontSize="12" 
+                                                   Margin="0,3,0,0"/>
+                                    </StackPanel>
+
+                                    <Border Grid.Column="2" 
+                                            Background="#28395D" 
+                                            CornerRadius="15" 
+                                            Padding="10,5" 
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding EntityCount, StringFormat='{}{0} entities'}" 
+                                                   Foreground="{StaticResource TextSecondaryColor}" 
+                                                   FontSize="12"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="6" Style="{StaticResource FuturisticGridSplitter}" Margin="20,40"/>
+
+            <!-- Sketch Details -->
+            <Border Grid.Column="2" 
+                    Background="{StaticResource SecondaryGradient}" 
+                    CornerRadius="16" 
+                    Padding="20" 
+                    Effect="{StaticResource SoftShadowEffect}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" 
+                               Text="Sketch Details" 
+                               FontSize="22" 
+                               FontWeight="SemiBold" 
+                               Margin="5,0,0,20" 
+                               Foreground="{StaticResource TextPrimaryColor}"
+                               FontFamily="Segoe UI"/>
+
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Sketch Info -->
+                        <Border Grid.Row="0" 
+                                Background="#223A59" 
+                                CornerRadius="16" 
+                                Padding="25" 
+                                Margin="0,0,0,20"
+                                Effect="{StaticResource SoftShadowEffect}">
+                            <Grid>
+                                <Grid.Resources>
+                                    <Style TargetType="TextBlock" x:Key="LabelStyle">
+                                        <Setter Property="Margin" Value="0,5"/>
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryColor}"/>
+                                        <Setter Property="FontWeight" Value="Medium"/>
+                                        <Setter Property="FontFamily" Value="Segoe UI"/>
+                                    </Style>
+                                    <Style TargetType="TextBlock" x:Key="ValueStyle">
+                                        <Setter Property="Margin" Value="0,5"/>
+                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="FontFamily" Value="Segoe UI"/>
+                                    </Style>
+                                </Grid.Resources>
+
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Grid.Column="0">
+                                    <TextBlock Text="Sketch Name" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Text="{Binding SelectedSketch.Name}" Style="{StaticResource ValueStyle}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="1">
+                                    <TextBlock Text="Sketch ID" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Text="{Binding SelectedSketch.Id}" Style="{StaticResource ValueStyle}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="2">
+                                    <TextBlock Text="Feature Type" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Text="{Binding SelectedSketch.FeatureType}" Style="{StaticResource ValueStyle}"/>
+                                </StackPanel>
+
+                                <!-- Sketch Visualization Placeholder -->
+                                <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" 
+                                        Background="#1A2A45" 
+                                        CornerRadius="12" 
+                                        Height="120" 
+                                        Margin="0,20,0,0"
+                                        BorderThickness="1"
+                                        BorderBrush="#3A4665">
+                                    <Grid>
+                                        <Path Data="M3,17V22H8L17,13L12,8L3,17M22.85,14.19L21.87,15.17L19.83,13.13L20.81,12.15C21,11.95 21.33,11.95 21.53,12.15L22.85,13.47C23.05,13.67 23.05,14 22.85,14.19Z" 
+                                              Fill="#3A74B5" 
+                                              Width="48" 
+                                              Height="48" 
+                                              Stretch="Uniform" 
+                                              HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"
+                                              Opacity="0.5"/>
+                                        <TextBlock Text="Sketch Preview" 
+                                                   Foreground="#5A7BA9" 
+                                                   FontSize="14" 
+                                                   HorizontalAlignment="Center" 
+                                                   VerticalAlignment="Bottom"
+                                                   Margin="0,0,0,10"/>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- Dimensions Title -->
+                        <Border Grid.Row="1" 
+                                Background="{StaticResource AccentGradient}" 
+                                CornerRadius="12" 
+                                Padding="15,10" 
+                                Margin="0,0,0,15"
+                                Effect="{StaticResource SoftShadowEffect}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M17,13H13V17H11V13H7V11H11V7H13V11H17V13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" 
+                                      Fill="White" 
+                                      Width="20" 
+                                      Height="20" 
+                                      Stretch="Uniform" 
+                                      Margin="0,0,10,0"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock Text="Dimensions" 
+                                           FontSize="18" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"
+                                           FontFamily="Segoe UI"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Dimensions List -->
+                        <Border Grid.Row="2" 
+                                Background="#1E304D" 
+                                CornerRadius="16" 
+                                Padding="0"
+                                Effect="{StaticResource SoftShadowEffect}">
+                            <ListView ItemsSource="{Binding SelectedSketch.Dimensions}" 
+                                      Style="{StaticResource FuturisticListView}"
+                                      Background="Transparent" 
+                                      BorderThickness="0">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Name" Width="160">
+                                            <GridViewColumn.HeaderContainerStyle>
+                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
+                                            </GridViewColumn.HeaderContainerStyle>
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Name}" 
+                                                               Foreground="{StaticResource TextPrimaryColor}" 
+                                                               Padding="10,8"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+
+                                        <GridViewColumn Header="Value" Width="120">
+                                            <GridViewColumn.HeaderContainerStyle>
+                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
+                                            </GridViewColumn.HeaderContainerStyle>
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#2A4066" 
+                                                            CornerRadius="6" 
+                                                            Padding="10,5" 
+                                                            Margin="5,2">
+                                                        <TextBlock Text="{Binding Value}" 
+                                                                   Foreground="{StaticResource TextPrimaryColor}" 
+                                                                   FontWeight="Medium"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+
+                                        <GridViewColumn Header="Type" Width="150">
+                                            <GridViewColumn.HeaderContainerStyle>
+                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
+                                            </GridViewColumn.HeaderContainerStyle>
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Margin="5,2">
+                                                        <Border Width="24" 
+                                                                Height="24" 
+                                                                CornerRadius="12" 
+                                                                Margin="0,0,8,0"
+                                                                Background="{StaticResource AccentGradient}">
+                                                            <TextBlock Text="&#xE946;" 
+                                                                       Foreground="White" 
+                                                                       FontFamily="Segoe MDL2 Assets" 
+                                                                       HorizontalAlignment="Center" 
+                                                                       VerticalAlignment="Center"
+                                                                       FontSize="12"/>
+                                                        </Border>
+                                                        <TextBlock Text="{Binding Type}" 
+                                                                   VerticalAlignment="Center" 
+                                                                   Foreground="{StaticResource TextPrimaryColor}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+
+                                        <GridViewColumn Header="Units" Width="100">
+                                            <GridViewColumn.HeaderContainerStyle>
+                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
+                                            </GridViewColumn.HeaderContainerStyle>
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Units}" 
+                                                               Foreground="{StaticResource TextPrimaryColor}"
+                                                               Padding="10,8"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+
+                                        <GridViewColumn Header="Ref" Width="80">
+                                            <GridViewColumn.HeaderContainerStyle>
+                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
+                                            </GridViewColumn.HeaderContainerStyle>
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsReference}" 
+                                                              IsEnabled="False" 
+                                                              Foreground="{StaticResource TextPrimaryColor}"
+                                                              VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </Border>
+                    </Grid>
+
+                    <!-- Loading Overlay -->
+                    <Grid Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Rectangle Fill="{StaticResource BlackOverlay}"/>
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Grid Width="80" Height="80">
+                                <Ellipse Fill="#1A2A45" 
+                                         Width="80" 
+                                         Height="80"/>
+                                <Path Data="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z" 
+                                      Fill="{StaticResource HighlightGradient}" 
+                                      Width="40" 
+                                      Height="40"
+                                      Stretch="Uniform"
+                                      RenderTransformOrigin="0.5,0.5">
+                                    <Path.RenderTransform>
+                                        <RotateTransform x:Name="LoadingAnimation" Angle="0"/>
+                                    </Path.RenderTransform>
+                                    <Path.Triggers>
+                                        <EventTrigger RoutedEvent="Path.Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation 
+                                                        Storyboard.TargetName="LoadingAnimation"
+                                                        Storyboard.TargetProperty="Angle"
+                                                        From="0" To="360" Duration="0:0:1"
+                                                        RepeatBehavior="Forever"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </Path.Triggers>
+                                </Path>
+                            </Grid>
+                            <TextBlock Text="Loading..." 
+                                       FontSize="18" 
+                                       Foreground="{StaticResource TextPrimaryColor}" 
+                                       HorizontalAlignment="Center"
+                                       FontFamily="Segoe UI"
+                                       Margin="0,20,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2" 
+                Background="{StaticResource HeaderGradient}" 
+                Padding="30,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Ellipse Width="10" 
+                             Height="10" 
+                             Fill="#00C853" 
+                             Margin="0,0,8,0"
+                             VerticalAlignment="Center"/>
+                    <TextBlock Text="Status:" 
+                               Foreground="{StaticResource TextSecondaryColor}"
+                               FontWeight="Medium"
+                               FontFamily="Segoe UI"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <TextBlock Grid.Column="1" 
+                           Text="{Binding StatusMessage}" 
+                           Foreground="{StaticResource TextPrimaryColor}"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           FontFamily="Segoe UI"/>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <TextBlock Text="SOLIDWORKS Sketch Viewer v1.0" 
+                               Foreground="{StaticResource TextSecondaryColor}"
+                               FontFamily="Segoe UI Light"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
