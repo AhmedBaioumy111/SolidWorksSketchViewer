@@ -5,6 +5,9 @@ using SolidWorksSketchViewer.ViewModels;
 
 namespace SolidWorksSketchViewer
 {
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml
+    /// </summary>
     public partial class MainWindow : Window
     {
         private MainViewModel _viewModel;
@@ -17,14 +20,14 @@ namespace SolidWorksSketchViewer
             _viewModel = new MainViewModel();
             DataContext = _viewModel;
 
-            // Register value converters in resources
-            //Resources.Add("BooleanToVisibilityConverter", new BooleanToVisibilityConverter());
+            // Subscribe to window closing event
+            this.Closing += Window_Closing;
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             // Clean up resources when the window is closing
-            _viewModel.Cleanup();
+            _viewModel?.Cleanup();
         }
     }
 

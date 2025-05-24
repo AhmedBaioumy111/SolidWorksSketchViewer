@@ -1,540 +1,42 @@
 ﻿using System;
-using System.Runtime.InteropServices;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorksSketchViewer.Models;
+using SolidWorksSketchViewer.Services;
 
 namespace SolidWorksSketchViewer.Helpers
 {
-    public class SolidWorksService
+    /// <summary>
+    /// Main service class for all SolidWorks API operations
+    /// This is where all backend SolidWorks logic should be implemented
+    /// </summary>
+    public class SolidWorksService : IDisposable
     {
         private SldWorks swApp;
         private ModelDoc2 swModel;
+        private AssemblyDoc swAssembly;
 
-        // Dictionary to store sketch objects with their parent features for ID lookup
-        private Dictionary<ISketch, Feature> sketchFeatureMap = new Dictionary<ISketch, Feature>();
+        // Store original values for potential rollback
+        private Dictionary<string, object> originalValues = new Dictionary<string, object>();
 
-        // Dictionary to store dimensions with unique identifiers
-        private Dictionary<Dimension, string> dimensionIdentifierMap = new Dictionary<Dimension, string>();
-        private int dimensionCounter = 0;
+        #region Initialization and Cleanup
 
         public SolidWorksService()
         {
             try
             {
-                // Try to connect to an already running instance of SOLIDWORKS
+                // Try to connect to running instance
                 swApp = (SldWorks)Marshal.GetActiveObject("SldWorks.Application");
             }
             catch
             {
-                // If no instance is running, create a new one
+                // Create new instance if not running
                 swApp = new SldWorks();
                 swApp.Visible = true;
-            }
-        }
-
-        private string GetDimensionTypeFromDimension(Dimension dim)
-        {
-            try
-            {
-                // Use parent DisplayDimension to determine dimension type
-                foreach (KeyValuePair<Dimension, string> entry in dimensionIdentifierMap)
-                {
-                    if (entry.Key == dim)
-                    {
-                        string[] parts = entry.Value.Split('|');
-                        if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
-                        {
-                            int dimTypeVal;
-                            if (int.TryParse(parts[1], out dimTypeVal))
-                            {
-                                return GetDimensionType(dimTypeVal);
-                            }
-                        }
-                    }
-                }
-
-                // If we can't determine type from stored data, make a best guess
-                bool isAngular = false;
-                try
-                {
-                    // Try to detect angular dimensions by value range
-                    double value = dim.Value;
-                    isAngular = (Math.Abs(value) <= 6.28); // Rough heuristic for radians
-                }
-                catch
-                {
-                    isAngular = false;
-                }
-
-                return isAngular ? "Angular" : "Linear";
-            }
-            catch
-            {
-                return "Unknown";
-            }
-        }
-
-        public SolidWorksDocumentModel OpenDocument(string filePath)
-        {
-            // Clear stored maps when opening a new document
-            sketchFeatureMap.Clear();
-            dimensionIdentifierMap.Clear();
-            dimensionCounter = 0;
-
-            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
-            {
-                return null;
-            }
-
-            // Open the document
-            int errors = 0;
-            int warnings = 0;
-            swModel = swApp.OpenDoc6(filePath, (int)swDocumentTypes_e.swDocPART,
-                                     (int)swOpenDocOptions_e.swOpenDocOptions_ReadOnly,
-                                     "", ref errors, ref warnings);
-
-            if (swModel == null)
-            {
-                return null;
-            }
-
-            // Create a document model
-            var documentModel = new SolidWorksDocumentModel
-            {
-                FilePath = filePath,
-                FileName = Path.GetFileName(filePath)
-            };
-
-            // Set document type
-            switch (swModel.GetType())
-            {
-                case (int)swDocumentTypes_e.swDocPART:
-                    documentModel.DocumentType = "Part";
-                    break;
-                case (int)swDocumentTypes_e.swDocASSEMBLY:
-                    documentModel.DocumentType = "Assembly";
-                    break;
-                case (int)swDocumentTypes_e.swDocDRAWING:
-                    documentModel.DocumentType = "Drawing";
-                    break;
-                default:
-                    documentModel.DocumentType = "Unknown";
-                    break;
-            }
-
-            // Populate sketches
-            documentModel.Sketches = GetAllSketches();
-
-            return documentModel;
-        }
-
-        public ObservableCollection<SketchModel> GetAllSketches()
-        {
-            var sketches = new ObservableCollection<SketchModel>();
-
-            if (swModel == null)
-            {
-                return sketches;
-            }
-
-            // Get the feature manager
-            FeatureManager featureManager = swModel.FeatureManager;
-            object featureObj = swModel.FirstFeature();
-
-            if (featureObj == null)
-                return sketches;
-
-            Feature feature = null;
-            try
-            {
-                feature = (Feature)featureObj;
-            }
-            catch
-            {
-                return sketches;
-            }
-
-            // Loop through all features
-            while (feature != null)
-            {
-                if (feature.GetTypeName2() == "ProfileFeature" || feature.GetTypeName2() == "SketchFeature")
-                {
-                    var sketch = new SketchModel
-                    {
-                        Name = feature.Name,
-                        Id = feature.GetID().ToString(),
-                        FeatureType = feature.GetTypeName2(),
-                        IsVisible = GetSketchVisibility(feature)
-                    };
-
-                    // Get the sketch entities count
-                    object sketchObjRaw = feature.GetSpecificFeature2();
-                    if (sketchObjRaw != null)
-                    {
-                        Sketch sketchObject = null;
-                        try
-                        {
-                            sketchObject = (Sketch)sketchObjRaw;
-                        }
-                        catch
-                        {
-                            // Skip if casting fails
-                            continue;
-                        }
-
-                        // Store sketch with its parent feature for later ID lookup
-                        if (!sketchFeatureMap.ContainsKey(sketchObject))
-                        {
-                            sketchFeatureMap.Add(sketchObject, feature);
-                        }
-
-                        // Get entity count by checking segment count
-                        object segmentsObj = sketchObject.GetSketchSegments();
-                        object pointsObj = sketchObject.GetSketchPoints2();
-
-                        object[] segments = segmentsObj as object[];
-                        object[] points = pointsObj as object[];
-
-                        sketch.EntityCount = 0;
-                        if (segments != null)
-                            sketch.EntityCount += segments.Length;
-                        if (points != null)
-                            sketch.EntityCount += points.Length;
-
-                        // Check if sketch is active
-                        ISketch activeSketch = swModel.SketchManager.ActiveSketch;
-                        sketch.IsActive = (activeSketch != null && activeSketch == sketchObject);
-                    }
-
-                    // Get dimensions for the sketch
-                    sketch.Dimensions = GetSketchDimensions(feature);
-
-                    sketches.Add(sketch);
-                }
-
-                // Get the next feature
-                object nextFeatureObj = feature.GetNextFeature();
-                if (nextFeatureObj == null)
-                    break;
-
-                try
-                {
-                    feature = (Feature)nextFeatureObj;
-                }
-                catch
-                {
-                    break;
-                }
-            }
-
-            return sketches;
-        }
-
-        public ObservableCollection<DimensionModel> GetSketchDimensions(Feature sketchFeature)
-        {
-            var dimensions = new ObservableCollection<DimensionModel>();
-
-            if (sketchFeature == null)
-            {
-                return dimensions;
-            }
-
-            // Get the first display dimension
-            object dispDimObj = sketchFeature.GetFirstDisplayDimension();
-
-            if (dispDimObj == null)
-                return dimensions;
-
-            DisplayDimension dispDim = null;
-            try
-            {
-                dispDim = (DisplayDimension)dispDimObj;
-            }
-            catch
-            {
-                return dimensions;
-            }
-
-            // Loop through all dimensions using the iterator pattern
-            while (dispDim != null)
-            {
-                object dimObj = dispDim.GetDimension();
-                if (dimObj != null)
-                {
-                    Dimension dim = null;
-                    try
-                    {
-                        dim = (Dimension)dimObj;
-
-                        // Store dimension with type info for later lookup
-                        // Get type from DisplayDimension and store it
-                        int dispDimType = dispDim.GetType();
-                        string dimIdentifier = dimensionCounter + "|" + dispDimType;
-                        dimensionIdentifierMap[dim] = dimIdentifier;
-                        dimensionCounter++;
-
-                        var dimensionModel = new DimensionModel
-                        {
-                            Name = dim.GetNameForSelection(),
-                            Value = dim.Value.ToString(), // Get value in active config
-                            Type = GetDimensionType(dispDimType),
-                            IsReference = dim.IsReference(),
-                            Units = GetDimensionUnits(dispDim)
-                        };
-
-                        dimensions.Add(dimensionModel);
-                    }
-                    catch
-                    {
-                        // Skip if casting fails
-                    }
-                }
-
-                // Get next dimension
-                object nextDispDimObj = sketchFeature.GetNextDisplayDimension(dispDim);
-                if (nextDispDimObj == null)
-                    break;
-
-                try
-                {
-                    dispDim = (DisplayDimension)nextDispDimObj;
-                }
-                catch
-                {
-                    break;
-                }
-            }
-
-            return dimensions;
-        }
-
-        private bool GetSketchVisibility(Feature feature)
-        {
-            try
-            {
-                // Check if the feature is suppressed using the IsSuppressed method
-                return !feature.IsSuppressed();
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private string GetDimensionType(int dimType)
-        {
-            switch (dimType)
-            {
-                case 0: // swAngularDimension
-                    return "Angular";
-                case 1: // swArcLengthDimension
-                    return "Arc Length";
-                case 2: // swChamferDimension  
-                    return "Chamfer";
-                case 3: // swDiameterDimension
-                    return "Diameter";
-                case 4: // swLinearDimension
-                    return "Linear";
-                case 5: // swOrdinateDimension
-                    return "Ordinate";
-                case 6: // swRadialDimension
-                    return "Radial";
-                default:
-                    return "Unknown";
-            }
-        }
-
-        private string GetDimensionUnits(DisplayDimension dispDim)
-        {
-            try
-            {
-                if (dispDim == null)
-                    return "Unknown";
-
-                // Check if using document units
-                if (dispDim.GetUseDocUnits())
-                    return "Document Units";
-
-                // Get the units from the display dimension
-                int units = dispDim.GetUnits();
-
-                // Get the dimension to check its type
-                object dimObj = dispDim.GetDimension();
-                if (dimObj == null)
-                    return "Unknown";
-
-                Dimension dim = null;
-                try
-                {
-                    dim = (Dimension)dimObj;
-                }
-                catch
-                {
-                    return "Unknown";
-                }
-
-                // Get dimension type from display dimension
-                int dimType = dispDim.GetType();
-                bool isAngular = (dimType == 0); // 0 = swAngularDimension
-
-                // Check if angular or linear
-                if (isAngular)
-                {
-                    // For angular dimensions
-                    switch (units)
-                    {
-                        case 0: // swDegrees
-                            return "deg";
-                        case 1: // swRadians
-                            return "rad";
-                        default:
-                            return "Unknown";
-                    }
-                }
-                else
-                {
-                    // For linear dimensions
-                    switch (units)
-                    {
-                        case 0: // swMM
-                            return "mm";
-                        case 1: // swCM
-                            return "cm";
-                        case 2: // swMETER
-                            return "m";
-                        case 3: // swINCHES
-                            return "in";
-                        case 4: // swFEET
-                            return "ft";
-                        default:
-                            return "Unknown";
-                    }
-                }
-            }
-            catch
-            {
-                return "Unknown";
-            }
-        }
-
-        public void SelectSketch(string sketchId)
-        {
-            if (swModel == null || string.IsNullOrEmpty(sketchId))
-            {
-                return;
-            }
-
-            // Try to get the feature by ID
-            Feature feature = null;
-            try
-            {
-                // Use alternative method to find feature by ID
-                feature = FindFeatureById(swModel, sketchId);
-            }
-            catch
-            {
-                // Silently catch errors
-            }
-
-            if (feature != null)
-            {
-                // Clear current selection
-                swModel.ClearSelection2(true);
-
-                // Select the feature
-                feature.Select2(false, 0);
-
-                // Optionally, zoom to fit
-                swModel.ViewZoomtofit2();
-            }
-        }
-
-        // Helper method to find feature by ID
-        private Feature FindFeatureById(ModelDoc2 model, string featureId)
-        {
-            if (model == null)
-                return null;
-
-            object featObj = model.FirstFeature();
-            if (featObj == null)
-                return null;
-
-            Feature feat = null;
-            try
-            {
-                feat = (Feature)featObj;
-            }
-            catch
-            {
-                return null;
-            }
-
-            while (feat != null)
-            {
-                if (feat.GetID().ToString() == featureId)
-                    return feat;
-
-                // Check child features
-                object subFeatObj = feat.GetFirstSubFeature();
-                if (subFeatObj != null)
-                {
-                    Feature subFeat = null;
-                    try
-                    {
-                        subFeat = (Feature)subFeatObj;
-                    }
-                    catch
-                    {
-                        subFeat = null;
-                    }
-
-                    while (subFeat != null)
-                    {
-                        if (subFeat.GetID().ToString() == featureId)
-                            return subFeat;
-
-                        object nextSubFeatObj = subFeat.GetNextSubFeature();
-                        if (nextSubFeatObj == null)
-                            break;
-
-                        try
-                        {
-                            subFeat = (Feature)nextSubFeatObj;
-                        }
-                        catch
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                object nextFeatObj = feat.GetNextFeature();
-                if (nextFeatObj == null)
-                    break;
-
-                try
-                {
-                    feat = (Feature)nextFeatObj;
-                }
-                catch
-                {
-                    break;
-                }
-            }
-
-            return null;
-        }
-
-        public void CloseDocument()
-        {
-            if (swModel != null)
-            {
-                swApp.CloseDoc(swModel.GetTitle());
-                swModel = null;
             }
         }
 
@@ -543,14 +45,967 @@ namespace SolidWorksSketchViewer.Helpers
             CloseDocument();
             if (swApp != null)
             {
-                // Don't terminate SOLIDWORKS if we didn't start it
-                // swApp.ExitApp(); 
+                Marshal.ReleaseComObject(swApp);
                 swApp = null;
             }
-
-            // Clear dictionaries
-            sketchFeatureMap.Clear();
-            dimensionIdentifierMap.Clear();
         }
+
+        #endregion
+
+        #region Assembly Operations
+
+        /// <summary>
+        /// Opens a SolidWorks assembly and returns its metadata
+        /// </summary>
+        public AssemblyInfo OpenAssembly(string assemblyPath)
+        {
+            try
+            {
+                if (!File.Exists(assemblyPath))
+                    throw new FileNotFoundException($"Assembly file not found: {assemblyPath}");
+
+                // Close any open document
+                CloseDocument();
+
+                // Open the assembly
+                int errors = 0;
+                int warnings = 0;
+                swModel = swApp.OpenDoc6(
+                    assemblyPath,
+                    (int)swDocumentTypes_e.swDocASSEMBLY,
+                    (int)swOpenDocOptions_e.swOpenDocOptions_Silent,
+                    "",
+                    ref errors,
+                    ref warnings
+                );
+
+                if (swModel == null)
+                    throw new Exception($"Failed to open assembly. Errors: {errors}, Warnings: {warnings}");
+
+                swAssembly = (AssemblyDoc)swModel;
+
+                // Gather assembly information
+                var assemblyInfo = new AssemblyInfo
+                {
+                    Name = Path.GetFileName(assemblyPath),
+                    FilePath = assemblyPath,
+                    FileSize = new FileInfo(assemblyPath).Length,
+                    PartCount = GetComponentCount(),
+                    Features = GetFeatureList(),
+                    Sketches = GetSketchList()
+                };
+
+                // Try to get thumbnail
+                assemblyInfo.ThumbnailPath = ExtractThumbnail(assemblyPath);
+
+                return assemblyInfo;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error opening assembly: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Process all modifications from JSON
+        /// </summary>
+        public async Task<List<ModificationResult>> ProcessModifications(
+            string modificationJson,
+            Action<FeatureProcessingStatus> progressCallback)
+        {
+            var results = new List<ModificationResult>();
+
+            try
+            {
+                // Parse JSON into modifications
+                var modifications = ParseModificationJson(modificationJson);
+
+                foreach (var mod in modifications)
+                {
+                    var status = new FeatureProcessingStatus
+                    {
+                        FeatureName = mod.FeatureName,
+                        StatusIcon = "⏳",
+                        Message = "Processing...",
+                        ProcessingTime = "0.0s",
+                        BackgroundColor = "#FFF3E0"
+                    };
+
+                    progressCallback?.Invoke(status);
+
+                    var startTime = DateTime.Now;
+                    ModificationResult result = null;
+
+                    // Process based on modification type
+                    switch (mod.Type.ToLower())
+                    {
+                        case "dimension":
+                            result = await ProcessDimensionModification(mod);
+                            break;
+
+                        case "material":
+                            result = await ProcessMaterialModification(mod);
+                            break;
+
+                        case "feature":
+                            result = await ProcessFeatureModification(mod);
+                            break;
+
+                        default:
+                            result = new ModificationResult
+                            {
+                                FeatureName = mod.FeatureName,
+                                Success = false,
+                                ErrorMessage = $"Unknown modification type: {mod.Type}"
+                            };
+                            break;
+                    }
+
+                    // Update status based on result
+                    status.ProcessingTime = $"{(DateTime.Now - startTime).TotalSeconds:F1}s";
+
+                    if (result.Success)
+                    {
+                        status.StatusIcon = "✓";
+                        status.Message = "Successfully modified";
+                        status.BackgroundColor = "#E8F5E9";
+                    }
+                    else
+                    {
+                        status.StatusIcon = "❌";
+                        status.Message = result.ErrorMessage;
+                        status.BackgroundColor = "#FFEBEE";
+                    }
+
+                    progressCallback?.Invoke(status);
+                    results.Add(result);
+
+                    // Small delay for UI updates
+                    await Task.Delay(100);
+                }
+
+                // Force rebuild if needed
+                swModel.ForceRebuild3(false);
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error processing modifications: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+
+        #region Dimension Modifications
+
+        /// <summary>
+        /// Modifies a dimension value
+        /// </summary>
+        public DimensionModificationResult ModifyDimension(
+            string featureName,
+            string dimensionName,
+            double newValue)
+        {
+            try
+            {
+                // Clear selection
+                swModel.ClearSelection2(true);
+
+                // Find and select the dimension
+                DisplayDimension dispDim = FindDimension(featureName, dimensionName);
+                if (dispDim == null)
+                {
+                    return new DimensionModificationResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Dimension {dimensionName} not found in {featureName}"
+                    };
+                }
+
+                // Get the dimension object
+                Dimension dim = (Dimension)dispDim.GetDimension();
+
+                // Store original value
+                double originalValue = dim.Value;
+                string key = $"{featureName}_{dimensionName}";
+                originalValues[key] = originalValue;
+
+                // Set new value
+                int retval = dim.SetSystemValue3(
+                    newValue,
+                    (int)swSetValueInConfiguration_e.swSetValue_InThisConfiguration,
+                    null
+                );
+
+                if (retval != (int)swSetValueReturnStatus_e.swSetValue_Successful)
+                {
+                    return new DimensionModificationResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Failed to set dimension value",
+                        OldValue = originalValue,
+                        NewValue = newValue
+                    };
+                }
+
+                // Rebuild to apply changes
+                swModel.EditRebuild3();
+
+                return new DimensionModificationResult
+                {
+                    Success = true,
+                    OldValue = originalValue,
+                    NewValue = newValue,
+                    Units = GetDimensionUnits(dim)
+                };
+            }
+            catch (Exception ex)
+            {
+                return new DimensionModificationResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        private async Task<ModificationResult> ProcessDimensionModification(Modification mod)
+        {
+            await Task.Delay(100); // Simulate async operation
+
+            var dimResult = ModifyDimension(
+                mod.FeatureName,
+                mod.DimensionName,
+                Convert.ToDouble(mod.NewValue)
+            );
+
+            return new ModificationResult
+            {
+                FeatureName = mod.FeatureName,
+                Success = dimResult.Success,
+                ErrorMessage = dimResult.ErrorMessage,
+                OldValue = dimResult.OldValue.ToString(),
+                NewValue = dimResult.NewValue.ToString()
+            };
+        }
+
+        private async Task<ModificationResult> ProcessMaterialModification(Modification mod)
+        {
+            await Task.Delay(100); // Simulate async operation
+
+            var matResult = ChangeMaterial(
+                mod.FeatureName,
+                mod.NewValue?.ToString() ?? ""
+            );
+
+            return new ModificationResult
+            {
+                FeatureName = mod.FeatureName,
+                Success = matResult.Success,
+                ErrorMessage = matResult.ErrorMessage,
+                OldValue = matResult.OldMaterial,
+                NewValue = matResult.NewMaterial
+            };
+        }
+
+        private async Task<ModificationResult> ProcessFeatureModification(Modification mod)
+        {
+            await Task.Delay(100); // Simulate async operation
+
+            var edges = mod.Parameters?.ContainsKey("edges") == true
+                ? mod.Parameters["edges"] as List<string>
+                : new List<string>();
+
+            var featureResult = AddFeature(
+                mod.Type,
+                edges,
+                mod.Parameters ?? new Dictionary<string, object>()
+            );
+
+            return new ModificationResult
+            {
+                FeatureName = featureResult.FeatureName ?? mod.FeatureName,
+                Success = featureResult.Success,
+                ErrorMessage = featureResult.ErrorMessage,
+                OldValue = "None",
+                NewValue = mod.Type
+            };
+        }
+
+        #endregion
+
+        #region Material Modifications
+
+        /// <summary>
+        /// Changes material of a component
+        /// </summary>
+        public MaterialChangeResult ChangeMaterial(string partName, string newMaterial)
+        {
+            try
+            {
+                // Get the component
+                Component2 comp = FindComponent(partName);
+                if (comp == null)
+                {
+                    return new MaterialChangeResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Component {partName} not found"
+                    };
+                }
+
+                // Get the model doc of the component
+                ModelDoc2 compModel = (ModelDoc2)comp.GetModelDoc2();
+                if (compModel == null)
+                {
+                    return new MaterialChangeResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Could not access component model"
+                    };
+                }
+
+                // Get current material
+                string currentMaterial = compModel.MaterialIdName;
+
+                // Store original value
+                originalValues[$"{partName}_Material"] = currentMaterial;
+
+                // Set new material
+                compModel.MaterialIdName = newMaterial;
+
+                // Apply material from database
+                string materialDB = FindMaterialDatabase(newMaterial);
+                if (!string.IsNullOrEmpty(materialDB))
+                {
+                    // Using PartDoc method for material assignment
+                    if (compModel.GetType() == (int)swDocumentTypes_e.swDocPART)
+                    {
+                        PartDoc partDoc = (PartDoc)compModel;
+                        partDoc.SetMaterialPropertyName2(
+                            "",  // Configuration name (empty for all configs)
+                            materialDB,  // Database path
+                            newMaterial  // Material name
+                        );
+                    }
+                }
+
+                return new MaterialChangeResult
+                {
+                    Success = true,
+                    OldMaterial = currentMaterial,
+                    NewMaterial = newMaterial
+                };
+            }
+            catch (Exception ex)
+            {
+                return new MaterialChangeResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        #endregion
+
+        #region Feature Operations
+
+        /// <summary>
+        /// Adds a new feature (chamfer, fillet, etc.)
+        /// </summary>
+        public FeatureAddResult AddFeature(
+            string featureType,
+            List<string> edges,
+            Dictionary<string, object> parameters)
+        {
+            try
+            {
+                Feature newFeature = null;
+
+                switch (featureType.ToLower())
+                {
+                    case "chamfer":
+                        newFeature = AddChamferFeature(edges, parameters);
+                        break;
+
+                    case "fillet":
+                        newFeature = AddFilletFeature(edges, parameters);
+                        break;
+
+                    case "hole":
+                        newFeature = AddHoleFeature(parameters);
+                        break;
+
+                    default:
+                        return new FeatureAddResult
+                        {
+                            Success = false,
+                            ErrorMessage = $"Unknown feature type: {featureType}"
+                        };
+                }
+
+                if (newFeature == null)
+                {
+                    return new FeatureAddResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Failed to create feature"
+                    };
+                }
+
+                return new FeatureAddResult
+                {
+                    Success = true,
+                    FeatureName = newFeature.Name
+                };
+            }
+            catch (Exception ex)
+            {
+                return new FeatureAddResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        private Feature AddChamferFeature(List<string> edges, Dictionary<string, object> parameters)
+        {
+            // Clear selection
+            swModel.ClearSelection2(true);
+
+            // Select edges
+            foreach (var edgeName in edges)
+            {
+                SelectEdge(edgeName);
+            }
+
+            // Get chamfer distance
+            double distance = 5.0; // Default 5mm
+            if (parameters.ContainsKey("distance"))
+            {
+                distance = Convert.ToDouble(parameters["distance"]);
+            }
+
+            // Create chamfer with all required parameters
+            swModel.FeatureManager.InsertFeatureChamfer(
+                0,                    // Type: 0 for distance-distance
+                0,                    // PropagateFlag
+                distance / 1000.0,    // Width (convert mm to meters)
+                distance / 1000.0,    // D1 (Distance 1)
+                0,                    // D2 (Distance 2)
+                0,                    // DOverride1
+                0,                    // DOverride2
+                0                     // VertexChamDist3
+            );
+
+            return (Feature)swModel.FeatureByPositionReverse(0);
+        }
+
+        private Feature AddFilletFeature(List<string> edges, Dictionary<string, object> parameters)
+        {
+            // Clear selection
+            swModel.ClearSelection2(true);
+
+            // Select edges
+            foreach (var edgeName in edges)
+            {
+                SelectEdge(edgeName);
+            }
+
+            // Get fillet radius
+            double radius = 5.0; // Default 5mm
+            if (parameters.ContainsKey("radius"))
+            {
+                radius = Convert.ToDouble(parameters["radius"]);
+            }
+
+            try
+            {
+                // Create fillet using FeatureFillet with all required parameters
+                // Create arrays for the required parameters
+                double[] radiiArray = new double[] { radius / 1000.0 }; // Convert mm to meters
+                object radiiObj = radiiArray;
+
+                Feature filletFeature = (Feature)swModel.FeatureManager.FeatureFillet(
+                    1,                  // Options: 1 = uniform radius
+                    radius / 1000.0,    // Radius (convert mm to meters)
+                    0,                  // Number of contours (0 = use selection)
+                    0,                  // Feature scope
+                    radiiObj,           // Radii array
+                    null,               // SetBackDistances
+                    null                // PointRadiusArray
+                );
+
+                return filletFeature;
+            }
+            catch
+            {
+                // If the simple method doesn't work, try the complex one
+                try
+                {
+                    // FeatureFillet3 with all required parameters
+                    Feature filletFeature3 = (Feature)swModel.FeatureManager.FeatureFillet3(
+                        195,                  // Options
+                        radius / 1000.0,      // Default radius
+                        0,                    // Fillet type
+                        0,                    // Overflow type
+                        0,                    // RadType
+                        0,                    // UseAutoSelect
+                        0,                    // Continuity
+                        0,                    // SetBackDistance
+                        0,                    // PointRadiusDistance
+                        0,                    // CornerType
+                        0,                    // ReverseFillet
+                        0,                    // VectorReverseFillet
+                        0,                    // ReverseSurfaceFillet
+                        0                     // VectorReverseSurfaceFillet
+                    );
+
+                    return filletFeature3;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        private Feature AddHoleFeature(Dictionary<string, object> parameters)
+        {
+            // This is a simplified hole creation
+            // In real implementation, you'd need face selection and positioning
+
+            double diameter = 10.0; // Default 10mm
+            double depth = 20.0;    // Default 20mm
+
+            if (parameters.ContainsKey("diameter"))
+            {
+                diameter = Convert.ToDouble(parameters["diameter"]);
+            }
+            if (parameters.ContainsKey("depth"))
+            {
+                depth = Convert.ToDouble(parameters["depth"]);
+            }
+
+            // Note: This is simplified. Real implementation needs:
+            // 1. Select face
+            // 2. Define position
+            // 3. Create hole wizard feature
+
+            // For now, return null as placeholder
+            return null;
+        }
+
+        #endregion
+
+        #region Save Operations
+
+        /// <summary>
+        /// Saves assembly to new location with all references
+        /// </summary>
+        public SaveAssemblyResult SaveAssemblyAs(string newPath, bool copyReferencedFiles = true)
+        {
+            try
+            {
+                var result = new SaveAssemblyResult
+                {
+                    SavedFiles = new List<string>()
+                };
+
+                // Create directory if it doesn't exist
+                string directory = Path.GetDirectoryName(newPath);
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                if (copyReferencedFiles)
+                {
+                    // Use Pack and Go for complete assembly copy
+                    PackAndGo packAndGo = swModel.Extension.GetPackAndGo();
+
+                    packAndGo.IncludeDrawings = false;
+                    packAndGo.IncludeSimulationResults = false;
+                    packAndGo.IncludeToolboxComponents = true;
+                    packAndGo.IncludeSuppressed = true;
+
+                    // Set destination
+                    packAndGo.SetSaveToName(true, directory);
+
+                    // Get all files that will be copied
+                    object fileNames;
+                    object fileStatus;
+                    packAndGo.GetDocumentNames(out fileNames);
+                    packAndGo.GetDocumentSaveToNames(out fileNames, out fileStatus);
+
+                    // Perform Pack and Go
+                    int[] statuses = (int[])swModel.Extension.SavePackAndGo(packAndGo);
+
+                    string[] savedFiles = (string[])fileNames;
+                    result.SavedFiles.AddRange(savedFiles);
+                }
+                else
+                {
+                    // Just save the assembly
+                    int errors = 0;
+                    int warnings = 0;
+
+                    bool success = swModel.Extension.SaveAs(
+                        newPath,
+                        (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
+                        (int)swSaveAsOptions_e.swSaveAsOptions_Silent,
+                        null,
+                        ref errors,
+                        ref warnings
+                    );
+
+                    if (!success)
+                    {
+                        result.Success = false;
+                        result.ErrorMessage = $"Save failed. Errors: {errors}, Warnings: {warnings}";
+                        return result;
+                    }
+
+                    result.SavedFiles.Add(newPath);
+                }
+
+                // Calculate total size
+                result.TotalSize = 0;
+                foreach (var file in result.SavedFiles)
+                {
+                    if (File.Exists(file))
+                    {
+                        result.TotalSize += new FileInfo(file).Length;
+                    }
+                }
+
+                result.Success = true;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new SaveAssemblyResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        private void CloseDocument()
+        {
+            if (swModel != null)
+            {
+                swApp.CloseDoc(swModel.GetTitle());
+                swModel = null;
+                swAssembly = null;
+            }
+        }
+
+        private int GetComponentCount()
+        {
+            if (swAssembly == null) return 0;
+
+            object[] components = (object[])swAssembly.GetComponents(false);
+            return components?.Length ?? 0;
+        }
+
+        private List<string> GetFeatureList()
+        {
+            var features = new List<string>();
+
+            Feature feat = (Feature)swModel.FirstFeature();
+            while (feat != null)
+            {
+                if (!feat.GetTypeName2().StartsWith("Reference"))
+                {
+                    features.Add($"{feat.Name} ({feat.GetTypeName2()})");
+                }
+                feat = (Feature)feat.GetNextFeature();
+            }
+
+            return features;
+        }
+
+        private List<SketchInfo> GetSketchList()
+        {
+            var sketches = new List<SketchInfo>();
+
+            Feature feat = (Feature)swModel.FirstFeature();
+            while (feat != null)
+            {
+                if (feat.GetTypeName2() == "ProfileFeature")
+                {
+                    var sketch = (Sketch)feat.GetSpecificFeature2();
+                    if (sketch != null)
+                    {
+                        object[] segments = (object[])sketch.GetSketchSegments();
+                        int segmentCount = segments?.Length ?? 0;
+
+                        sketches.Add(new SketchInfo
+                        {
+                            Name = feat.Name,
+                            SegmentCount = segmentCount,
+                            IsActive = sketch.Is3D()
+                        });
+                    }
+                }
+                feat = (Feature)feat.GetNextFeature();
+            }
+
+            return sketches;
+        }
+
+        private DisplayDimension FindDimension(string featureName, string dimensionName)
+        {
+            Feature feat = null;
+
+            // Find feature by name
+            Feature tempFeat = (Feature)swModel.FirstFeature();
+            while (tempFeat != null)
+            {
+                if (tempFeat.Name == featureName)
+                {
+                    feat = tempFeat;
+                    break;
+                }
+                tempFeat = (Feature)tempFeat.GetNextFeature();
+            }
+
+            if (feat == null) return null;
+
+            DisplayDimension dispDim = (DisplayDimension)feat.GetFirstDisplayDimension();
+            while (dispDim != null)
+            {
+                Dimension dim = (Dimension)dispDim.GetDimension();
+                if (dim.FullName == dimensionName || dim.Name == dimensionName)
+                {
+                    return dispDim;
+                }
+                dispDim = (DisplayDimension)feat.GetNextDisplayDimension(dispDim);
+            }
+
+            return null;
+        }
+
+        private Component2 FindComponent(string componentName)
+        {
+            object[] components = (object[])swAssembly.GetComponents(false);
+
+            foreach (Component2 comp in components)
+            {
+                if (comp.Name2 == componentName ||
+                    comp.GetSelectByIDString().Contains(componentName))
+                {
+                    return comp;
+                }
+            }
+
+            return null;
+        }
+
+        private string GetDimensionUnits(Dimension dim)
+        {
+            // Get document units
+            int lengthUnit = swModel.GetUserPreferenceIntegerValue(
+                (int)swUserPreferenceIntegerValue_e.swUnitsLinear
+            );
+
+            switch (lengthUnit)
+            {
+                case (int)swLengthUnit_e.swMM: return "mm";
+                case (int)swLengthUnit_e.swCM: return "cm";
+                case (int)swLengthUnit_e.swMETER: return "m";
+                case (int)swLengthUnit_e.swINCHES: return "in";
+                case (int)swLengthUnit_e.swFEET: return "ft";
+                default: return "unknown";
+            }
+        }
+
+        private string ExtractThumbnail(string filePath)
+        {
+            // Thumbnail extraction requires either:
+            // 1. Document Manager API (separate license)
+            // 2. Taking a screenshot of the current view
+            // 3. Using Windows Shell to extract embedded thumbnails
+
+            // For now, return null - implement this based on your specific needs
+            // The UI will work fine without thumbnails
+
+            /* Example implementation options:
+            
+            // Option 1: Save current view as image (requires open document)
+            if (swModel != null)
+            {
+                string tempPath = Path.Combine(Path.GetTempPath(), "temp_thumb.bmp");
+                swModel.SaveBMP(tempPath, 200, 200);
+                return tempPath;
+            }
+            
+            // Option 2: Use Document Manager API
+            // Requires separate license and SwDocumentMgr reference
+            
+            // Option 3: Extract Windows thumbnail
+            // Use Shell32 or Windows API
+            */
+
+            return null;
+        }
+
+        private string FindMaterialDatabase(string materialName)
+        {
+            // Common SolidWorks material database paths
+            string swPath = swApp.GetExecutablePath();
+            string swDir = System.IO.Path.GetDirectoryName(swPath);
+
+            // Try standard material database locations
+            string[] possiblePaths = new string[]
+            {
+                Path.Combine(swDir, @"lang\english\sldmaterials\SolidWorks Materials.sldmat"),
+                Path.Combine(swDir, @"lang\english\sldmaterials\Custom Materials.sldmat"),
+                Path.Combine(swDir, @"sldmaterials\SolidWorks Materials.sldmat")
+            };
+
+            // Check which database file exists
+            foreach (var path in possiblePaths)
+            {
+                if (File.Exists(path))
+                {
+                    // In production, you'd check if the material exists in this database
+                    return path;
+                }
+            }
+
+            // Return empty if not found
+            return "";
+        }
+
+        private void SelectEdge(string edgeName)
+        {
+            // This is a simplified implementation
+            // In a real implementation, you would:
+            // 1. Parse the edge reference (e.g., "Edge<1>")
+            // 2. Find the actual edge in the model
+            // 3. Select it using SelectByID2
+
+            try
+            {
+                // Example: Select edge by name
+                // The actual edge name format depends on your model
+                swModel.Extension.SelectByID2(
+                    edgeName,           // Name
+                    "EDGE",            // Type
+                    0, 0, 0,           // X, Y, Z coordinates (not used for edges)
+                    true,              // Append to selection
+                    0,                 // Mark
+                    null,              // Callout
+                    0                  // Selection option
+                );
+            }
+            catch
+            {
+                // Log error in production
+            }
+        }
+
+        private List<Modification> ParseModificationJson(string json)
+        {
+            // Simple JSON parsing implementation
+            // In production, use Newtonsoft.Json or System.Text.Json
+            var modifications = new List<Modification>();
+
+            // Mock implementation - replace with actual JSON parsing
+            try
+            {
+                // Example of what the parsed data might look like
+                modifications.Add(new Modification
+                {
+                    Type = "dimension",
+                    FeatureName = "Sketch1",
+                    DimensionName = "D1@Sketch1",
+                    CurrentValue = 10.0,
+                    NewValue = 12.0,
+                    Units = "mm"
+                });
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Failed to parse JSON: {ex.Message}");
+            }
+
+            return modifications;
+        }
+
+        #endregion
     }
+
+    #region Result Classes
+
+    public class AssemblyInfo
+    {
+        public string Name { get; set; }
+        public string FilePath { get; set; }
+        public long FileSize { get; set; }
+        public int PartCount { get; set; }
+        public string ThumbnailPath { get; set; }
+        public List<string> Features { get; set; }
+        public List<SketchInfo> Sketches { get; set; }
+    }
+
+    public class SketchInfo
+    {
+        public string Name { get; set; }
+        public int SegmentCount { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public class ModificationResult
+    {
+        public string FeatureName { get; set; }
+        public bool Success { get; set; }
+        public string ErrorMessage { get; set; }
+        public string OldValue { get; set; }
+        public string NewValue { get; set; }
+    }
+
+    public class DimensionModificationResult
+    {
+        public bool Success { get; set; }
+        public double OldValue { get; set; }
+        public double NewValue { get; set; }
+        public string Units { get; set; }
+        public string ErrorMessage { get; set; }
+    }
+
+    public class MaterialChangeResult
+    {
+        public bool Success { get; set; }
+        public string OldMaterial { get; set; }
+        public string NewMaterial { get; set; }
+        public string ErrorMessage { get; set; }
+    }
+
+    public class FeatureAddResult
+    {
+        public bool Success { get; set; }
+        public string FeatureName { get; set; }
+        public string ErrorMessage { get; set; }
+    }
+
+    public class SaveAssemblyResult
+    {
+        public bool Success { get; set; }
+        public List<string> SavedFiles { get; set; }
+        public long TotalSize { get; set; }
+        public string ErrorMessage { get; set; }
+    }
+
+    #endregion
 }

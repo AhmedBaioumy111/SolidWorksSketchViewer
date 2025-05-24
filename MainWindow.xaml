@@ -5,723 +5,698 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SolidWorksSketchViewer"
         mc:Ignorable="d"
-        Title="SOLIDWORKS Sketch Viewer" Height="800" Width="1200"
-        WindowStartupLocation="CenterScreen"
-        Closing="Window_Closing">
+        Title="SolidWorks Assembly Modifier" Height="800" Width="1400"
+        WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
-        <!-- Add converter explicitly -->
+        <!-- Converters -->
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
 
-        <!-- Futuristic gradient colors -->
-        <LinearGradientBrush x:Key="PrimaryGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#121E35" Offset="0.0"/>
-            <GradientStop Color="#1C2E51" Offset="1.0"/>
-        </LinearGradientBrush>
+        <!-- Styles -->
+        <Style x:Key="HeaderTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
 
-        <LinearGradientBrush x:Key="SecondaryGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#162238" Offset="0.0"/>
-            <GradientStop Color="#213654" Offset="1.0"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="HeaderGradient" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#112240" Offset="0.0"/>
-            <GradientStop Color="#1A3866" Offset="1.0"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#0088FF" Offset="0.0"/>
-            <GradientStop Color="#00C2FF" Offset="1.0"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="HighlightGradient" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#00B7FF" Offset="0.0"/>
-            <GradientStop Color="#0095FF" Offset="1.0"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="ButtonGradient" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#0095E9" Offset="0.0"/>
-            <GradientStop Color="#0070B3" Offset="1.0"/>
-        </LinearGradientBrush>
-
-        <SolidColorBrush x:Key="TextPrimaryColor" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="TextSecondaryColor" Color="#AAC4F5"/>
-        <SolidColorBrush x:Key="BorderColor" Color="#1F4068"/>
-        <SolidColorBrush x:Key="BlackOverlay" Color="#BB000000"/>
-
-        <!-- Button Style -->
-        <Style x:Key="FuturisticButton" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource ButtonGradient}"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="20,12"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.4" BlurRadius="5" Color="#003362"/>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="25"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                Effect="{TemplateBinding Effect}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource HighlightGradient}"/>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.6" BlurRadius="8" Color="#004A8C"/>
-                        </Setter.Value>
-                    </Setter>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentGradient}"/>
-                    <Setter Property="Opacity" Value="0.85"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.4"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Margin" Value="0,10,0,5"/>
         </Style>
 
-        <!-- TextBox Style -->
-        <Style x:Key="FuturisticTextBox" TargetType="TextBox">
-            <Setter Property="Background" Value="#223A59"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="15,12"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TextBox">
-                        <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="25"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                BorderBrush="{TemplateBinding BorderBrush}">
-                            <ScrollViewer x:Name="PART_ContentHost"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="StatusIndicatorStyle" TargetType="Border">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Margin" Value="5,0"/>
         </Style>
-
-        <!-- ListBox Style -->
-        <Style x:Key="FuturisticListBox" TargetType="ListBox">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListBox">
-                        <Border Background="Transparent" 
-                                BorderThickness="0">
-                            <ScrollViewer Padding="0" Focusable="False">
-                                <StackPanel IsItemsHost="True" Margin="0,8,0,0"/>
-                            </ScrollViewer>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- ListBoxItem Style -->
-        <Style x:Key="FuturisticListBoxItem" TargetType="ListBoxItem">
-            <Setter Property="Background" Value="#25304A"/>
-            <Setter Property="Padding" Value="16,13"/>
-            <Setter Property="Margin" Value="0,0,0,12"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Border" Background="{TemplateBinding Background}" 
-                                CornerRadius="12"
-                                BorderThickness="0"
-                                Effect="{TemplateBinding Effect}"
-                                BorderBrush="{TemplateBinding BorderBrush}">
-                            <ContentPresenter/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="{StaticResource AccentGradient}"/>
-                                <Setter TargetName="Border" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.4" BlurRadius="8" Color="#004A8C"/>
-                                    </Setter.Value>
-                                </Setter>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#30415F"/>
-                                <Setter TargetName="Border" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect ShadowDepth="1" Direction="315" Opacity="0.2" BlurRadius="5" Color="#001E39"/>
-                                    </Setter.Value>
-                                </Setter>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- GridSplitter Style -->
-        <Style x:Key="FuturisticGridSplitter" TargetType="GridSplitter">
-            <Setter Property="Background" Value="{StaticResource AccentGradient}"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="VerticalAlignment" Value="Stretch"/>
-            <Setter Property="Width" Value="3"/>
-            <Setter Property="Margin" Value="0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="GridSplitter">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="1.5"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- ListView Style -->
-        <Style x:Key="FuturisticListView" TargetType="ListView">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
-            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
-        </Style>
-
-        <!-- DataGrid header style -->
-        <Style x:Key="DimensionHeaderStyle" TargetType="GridViewColumnHeader">
-            <Setter Property="Background" Value="#283E5D"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="10,8"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="GridViewColumnHeader">
-                        <Border Background="{TemplateBinding Background}" 
-                                BorderThickness="0" 
-                                Padding="{TemplateBinding Padding}">
-                            <TextBlock Text="{TemplateBinding Content}" 
-                                       FontWeight="{TemplateBinding FontWeight}"
-                                       Foreground="{TemplateBinding Foreground}"
-                                       HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Dimension type icons -->
-        <DataTemplate x:Key="DimensionTypeTemplate">
-            <StackPanel Orientation="Horizontal">
-                <Border Width="24" Height="24" CornerRadius="12" Margin="0,0,8,0">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Color="#0088FF" Offset="0"/>
-                            <GradientStop Color="#00B7FF" Offset="1"/>
-                        </LinearGradientBrush>
-                    </Border.Background>
-                    <TextBlock Text="{Binding Type, Converter={StaticResource DimensionTypeToIconConverter}}" 
-                               Foreground="White" 
-                               FontFamily="Segoe MDL2 Assets" 
-                               HorizontalAlignment="Center" 
-                               VerticalAlignment="Center"
-                               FontSize="14"/>
-                </Border>
-                <TextBlock Text="{Binding Type}" VerticalAlignment="Center" Foreground="{StaticResource TextPrimaryColor}"/>
-            </StackPanel>
-        </DataTemplate>
     </Window.Resources>
 
-    <Grid Background="{StaticResource PrimaryGradient}">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <!-- Menu Bar -->
             <RowDefinition Height="Auto"/>
+            <!-- Header -->
+            <RowDefinition Height="*"/>
+            <!-- Main Content -->
+            <RowDefinition Height="Auto"/>
+            <!-- Status Bar -->
         </Grid.RowDefinitions>
 
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New Project" Command="{Binding NewProjectCommand}"/>
+                <MenuItem Header="_Open Project" Command="{Binding OpenProjectCommand}"/>
+                <MenuItem Header="_Save Project" Command="{Binding SaveProjectCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Recent Projects" ItemsSource="{Binding RecentProjects}"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Process">
+                <MenuItem Header="_Validate Files" Command="{Binding ValidateFilesCommand}"/>
+                <MenuItem Header="_Test LLM Connection" Command="{Binding TestLLMCommand}"/>
+                <MenuItem Header="_Check SolidWorks Status" Command="{Binding CheckSolidWorksCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Show File Browser" IsCheckable="True" IsChecked="{Binding ShowFileBrowser}"/>
+                <MenuItem Header="_Show Results Panel" IsCheckable="True" IsChecked="{Binding ShowResultsPanel}"/>
+                <Separator/>
+                <MenuItem Header="_Dark Theme" IsCheckable="True" IsChecked="{Binding IsDarkTheme}"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Documentation" Command="{Binding ShowDocumentationCommand}"/>
+                <MenuItem Header="_API Status" Command="{Binding ShowAPIStatusCommand}"/>
+                <MenuItem Header="_About" Command="{Binding ShowAboutCommand}"/>
+            </MenuItem>
+        </Menu>
+
         <!-- Header -->
-        <Border Grid.Row="0" Background="{StaticResource HeaderGradient}" Padding="30,22" Effect="{StaticResource SoftShadowEffect}">
+        <Border Grid.Row="1" Background="#F0F0F0" Padding="20,10">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <!-- Logo/App Icon -->
-                    <Path Data="M12,2L1,21H23L12,2M12,6L19.53,19H4.47L12,6" 
-                          Fill="{StaticResource AccentGradient}" 
-                          Width="36" 
-                          Height="36" 
-                          Stretch="Uniform" 
-                          Margin="0,0,16,0"/>
-
-                    <StackPanel Orientation="Vertical">
-                        <TextBlock Text="SOLIDWORKS Sketch Viewer" 
-                                   FontSize="24" 
-                                   FontWeight="SemiBold" 
-                                   Foreground="{StaticResource TextPrimaryColor}" 
-                                   FontFamily="Segoe UI"/>
-                        <TextBlock Text="Browse and explore sketches in your SOLIDWORKS files" 
-                                   FontSize="14" 
-                                   Margin="0,5,0,0" 
-                                   Foreground="{StaticResource TextSecondaryColor}" 
-                                   FontFamily="Segoe UI Light"/>
-                    </StackPanel>
+                <TextBlock Text="SolidWorks Assembly Modifier" Style="{StaticResource HeaderTextStyle}" 
+                          HorizontalAlignment="Center" FontSize="24"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="⚙" Width="30" Height="30" Margin="5,0" 
+                            Command="{Binding SettingsCommand}" ToolTip="Settings"/>
+                    <Button Content="?" Width="30" Height="30" 
+                            Command="{Binding HelpCommand}" ToolTip="Help"/>
                 </StackPanel>
+            </Grid>
+        </Border>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Border Background="#223A59" 
-                            CornerRadius="25" 
-                            Width="450"
-                            Height="45">
+        <!-- Main Content Area -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="200"/>
+                <!-- File Browser -->
+                <ColumnDefinition Width="Auto"/>
+                <!-- Splitter -->
+                <ColumnDefinition Width="*" MinWidth="400"/>
+                <!-- Main Processing Area -->
+                <ColumnDefinition Width="Auto"/>
+                <!-- Splitter -->
+                <ColumnDefinition Width="350" MinWidth="250"/>
+                <!-- Results Panel -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Sidebar - File Browser -->
+            <Border Grid.Column="0" BorderBrush="#CCCCCC" BorderThickness="0,0,1,0"
+                    Visibility="{Binding ShowFileBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Folder Selection -->
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="Working Directory" Style="{StaticResource SectionHeaderStyle}"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-
-                            <TextBox Grid.Column="0" 
-                                     Style="{StaticResource FuturisticTextBox}"
-                                     Text="{Binding FilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     IsReadOnly="True"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     VerticalContentAlignment="Center"
-                                     Foreground="{StaticResource TextPrimaryColor}"/>
-
-                            <Button Grid.Column="1" 
-                                    Content="Browse" 
-                                    Style="{StaticResource FuturisticButton}" 
-                                    Command="{Binding BrowseFileCommand}"
-                                    Height="45"
-                                    Width="110"
-                                    Margin="0"/>
+                            <TextBox Grid.Column="0" Text="{Binding WorkingDirectory}" 
+                                    IsReadOnly="True" Margin="0,0,5,0"/>
+                            <Button Grid.Column="1" Content="Browse..." Width="70"
+                                    Command="{Binding BrowseDirectoryCommand}"/>
                         </Grid>
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </Border>
+                    </StackPanel>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="1" Margin="30">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="2*"/>
-            </Grid.ColumnDefinitions>
+                    <!-- File Lists -->
+                    <TabControl Grid.Row="1" Margin="0,10,0,0">
+                        <!-- Assembly Files Tab -->
+                        <TabItem Header="Assemblies">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
 
-            <!-- Sketch List -->
-            <Border Grid.Column="0" 
-                    Background="{StaticResource SecondaryGradient}" 
-                    CornerRadius="16" 
-                    Padding="20" 
-                    Effect="{StaticResource SoftShadowEffect}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
+                                <Button Grid.Row="0" Content="Refresh" HorizontalAlignment="Right" 
+                                        Margin="0,5" Command="{Binding RefreshAssembliesCommand}"/>
 
-                    <TextBlock Grid.Row="0" 
-                               Text="Sketches" 
-                               FontSize="22" 
-                               FontWeight="SemiBold" 
-                               Margin="5,0,0,20" 
-                               Foreground="{StaticResource TextPrimaryColor}"
-                               FontFamily="Segoe UI"/>
+                                <ListBox Grid.Row="1" ItemsSource="{Binding AssemblyFiles}" 
+                                         SelectedItem="{Binding SelectedAssemblyFile}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="5" Margin="2">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
 
-                    <ListBox Grid.Row="1" 
-                             ItemsSource="{Binding CurrentDocument.Sketches}"
-                             SelectedItem="{Binding SelectedSketch, Mode=TwoWay}"
-                             Style="{StaticResource FuturisticListBox}"
-                             ItemContainerStyle="{StaticResource FuturisticListBoxItem}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" 
+                                                             Margin="0,0,5,0"/>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding FileName}" FontWeight="Bold"/>
+                                                        <TextBlock Text="{Binding FileSize}" FontSize="11" 
+                                                                  Foreground="Gray"/>
+                                                    </StackPanel>
+                                                    <Border Grid.Column="2" Style="{StaticResource StatusIndicatorStyle}"
+                                                            Background="{Binding ValidationStatusColor}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </TabItem>
 
-                                    <!-- Sketch Icon -->
-                                    <Border Grid.Column="0" 
-                                            Width="36" 
-                                            Height="36" 
-                                            CornerRadius="8" 
-                                            Background="#1E253A" 
-                                            Margin="0,0,12,0"
-                                            BorderThickness="1"
-                                            BorderBrush="#3A4665">
-                                        <Path Data="M3,17V22H8L17,13L12,8L3,17M22.85,14.19L21.87,15.17L19.83,13.13L20.81,12.15C21,11.95 21.33,11.95 21.53,12.15L22.85,13.47C23.05,13.67 23.05,14 22.85,14.19Z" 
-                                              Fill="#64B9FF" 
-                                              Width="18" 
-                                              Height="18" 
-                                              Stretch="Uniform" 
-                                              HorizontalAlignment="Center" 
-                                              VerticalAlignment="Center"/>
-                                    </Border>
+                        <!-- BOM Files Tab -->
+                        <TabItem Header="BOM Files">
+                            <ListBox ItemsSource="{Binding BOMFiles}" 
+                                     SelectedItem="{Binding SelectedBOMFile}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="5" Margin="2">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
 
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" 
-                                                   Foreground="{StaticResource TextPrimaryColor}" 
-                                                   FontSize="14" 
-                                                   FontWeight="Medium"/>
-                                        <TextBlock Text="{Binding FeatureType}" 
-                                                   Foreground="{StaticResource TextSecondaryColor}" 
-                                                   FontSize="12" 
-                                                   Margin="0,3,0,0"/>
-                                    </StackPanel>
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" 
+                                                         Margin="0,0,5,0"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding FileName}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </TabItem>
 
-                                    <Border Grid.Column="2" 
-                                            Background="#28395D" 
-                                            CornerRadius="15" 
-                                            Padding="10,5" 
-                                            VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding EntityCount, StringFormat='{}{0} entities'}" 
-                                                   Foreground="{StaticResource TextSecondaryColor}" 
-                                                   FontSize="12"/>
-                                    </Border>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                        <!-- Requirements Files Tab -->
+                        <TabItem Header="Requirements">
+                            <ListBox ItemsSource="{Binding RequirementsFiles}" 
+                                     SelectedItem="{Binding SelectedRequirementsFile}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="5" Margin="2">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" 
+                                                         Margin="0,0,5,0"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding FileName}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
             </Border>
 
             <!-- Splitter -->
-            <GridSplitter Grid.Column="1" Width="6" Style="{StaticResource FuturisticGridSplitter}" Margin="20,40"/>
+            <GridSplitter Grid.Column="1" Width="3" HorizontalAlignment="Stretch" 
+                         Background="#CCCCCC" Cursor="SizeWE"/>
 
-            <!-- Sketch Details -->
-            <Border Grid.Column="2" 
-                    Background="{StaticResource SecondaryGradient}" 
-                    CornerRadius="16" 
-                    Padding="20" 
-                    Effect="{StaticResource SoftShadowEffect}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
+            <!-- Center Panel - Main Processing Area -->
+            <TabControl Grid.Column="2" Margin="10" SelectedIndex="{Binding CurrentProcessingStage}">
+                <!-- Stage 1: File Preview -->
+                <TabItem Header="File Preview">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="10">
+                            <!-- Assembly Preview -->
+                            <Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="5" 
+                                    Padding="10" Margin="0,0,0,10"
+                                    Visibility="{Binding HasSelectedAssembly, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="Assembly Preview" Style="{StaticResource SectionHeaderStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" 
-                               Text="Sketch Details" 
-                               FontSize="22" 
-                               FontWeight="SemiBold" 
-                               Margin="5,0,0,20" 
-                               Foreground="{StaticResource TextPrimaryColor}"
-                               FontFamily="Segoe UI"/>
+                                        <Image Grid.Column="0" Source="{Binding AssemblyThumbnail}" 
+                                               Width="100" Height="100" Margin="0,0,10,0"/>
 
-                    <Grid Grid.Row="1">
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock>
+                                                <Run Text="Name: " FontWeight="Bold"/>
+                                                <Run Text="{Binding AssemblyName}"/>
+                                            </TextBlock>
+                                            <TextBlock>
+                                                <Run Text="Part Count: " FontWeight="Bold"/>
+                                                <Run Text="{Binding AssemblyPartCount}"/>
+                                            </TextBlock>
+                                            <TextBlock>
+                                                <Run Text="File Size: " FontWeight="Bold"/>
+                                                <Run Text="{Binding AssemblyFileSize}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- BOM Preview -->
+                            <Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="5" 
+                                    Padding="10" Margin="0,0,0,10"
+                                    Visibility="{Binding HasSelectedBOM, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="Bill of Materials Preview" Style="{StaticResource SectionHeaderStyle}"/>
+                                    <DataGrid ItemsSource="{Binding BOMPreviewData}" 
+                                             AutoGenerateColumns="False" MaxHeight="200">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Part Name" Binding="{Binding PartName}" Width="*"/>
+                                            <DataGridTextColumn Header="Quantity" Binding="{Binding Quantity}" Width="80"/>
+                                            <DataGridTextColumn Header="Material" Binding="{Binding Material}" Width="100"/>
+                                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Requirements Preview -->
+                            <Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="5" 
+                                    Padding="10"
+                                    Visibility="{Binding HasSelectedRequirements, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="Requirements Preview" Style="{StaticResource SectionHeaderStyle}"/>
+                                    <TextBox Text="{Binding RequirementsText}" 
+                                            IsReadOnly="True" TextWrapping="Wrap" 
+                                            MaxHeight="300" VerticalScrollBarVisibility="Auto"
+                                            FontFamily="Consolas"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Process Button -->
+                            <Button Content="Process Requirements with AI" 
+                                    Command="{Binding ProcessRequirementsCommand}"
+                                    HorizontalAlignment="Center" Margin="20"
+                                    Padding="20,10" FontSize="16"
+                                    IsEnabled="{Binding CanProcessRequirements}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Stage 2: Requirements Processing -->
+                <TabItem Header="AI Analysis">
+                    <Grid Margin="10">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Sketch Info -->
-                        <Border Grid.Row="0" 
-                                Background="#223A59" 
-                                CornerRadius="16" 
-                                Padding="25" 
-                                Margin="0,0,0,20"
-                                Effect="{StaticResource SoftShadowEffect}">
-                            <Grid>
-                                <Grid.Resources>
-                                    <Style TargetType="TextBlock" x:Key="LabelStyle">
-                                        <Setter Property="Margin" Value="0,5"/>
-                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryColor}"/>
-                                        <Setter Property="FontWeight" Value="Medium"/>
-                                        <Setter Property="FontFamily" Value="Segoe UI"/>
-                                    </Style>
-                                    <Style TargetType="TextBlock" x:Key="ValueStyle">
-                                        <Setter Property="Margin" Value="0,5"/>
-                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryColor}"/>
-                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                        <Setter Property="FontFamily" Value="Segoe UI"/>
-                                    </Style>
-                                </Grid.Resources>
+                        <!-- Processing Status -->
+                        <Border Grid.Row="0" Background="#F0F8FF" CornerRadius="5" Padding="10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="{Binding LLMStatusMessage}" FontSize="16" FontWeight="Bold"/>
+                                <ProgressBar Height="20" Margin="0,10" 
+                                            IsIndeterminate="{Binding IsLLMProcessing}"
+                                            Value="{Binding LLMProgress}" Maximum="100"/>
 
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1*"/>
-                                    <ColumnDefinition Width="1*"/>
-                                    <ColumnDefinition Width="1*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Grid.Row="0" Grid.Column="0">
-                                    <TextBlock Text="Sketch Name" Style="{StaticResource LabelStyle}"/>
-                                    <TextBlock Text="{Binding SelectedSketch.Name}" Style="{StaticResource ValueStyle}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Row="0" Grid.Column="1">
-                                    <TextBlock Text="Sketch ID" Style="{StaticResource LabelStyle}"/>
-                                    <TextBlock Text="{Binding SelectedSketch.Id}" Style="{StaticResource ValueStyle}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Row="0" Grid.Column="2">
-                                    <TextBlock Text="Feature Type" Style="{StaticResource LabelStyle}"/>
-                                    <TextBlock Text="{Binding SelectedSketch.FeatureType}" Style="{StaticResource ValueStyle}"/>
-                                </StackPanel>
-
-                                <!-- Sketch Visualization Placeholder -->
-                                <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" 
-                                        Background="#1A2A45" 
-                                        CornerRadius="12" 
-                                        Height="120" 
-                                        Margin="0,20,0,0"
-                                        BorderThickness="1"
-                                        BorderBrush="#3A4665">
-                                    <Grid>
-                                        <Path Data="M3,17V22H8L17,13L12,8L3,17M22.85,14.19L21.87,15.17L19.83,13.13L20.81,12.15C21,11.95 21.33,11.95 21.53,12.15L22.85,13.47C23.05,13.67 23.05,14 22.85,14.19Z" 
-                                              Fill="#3A74B5" 
-                                              Width="48" 
-                                              Height="48" 
-                                              Stretch="Uniform" 
-                                              HorizontalAlignment="Center" 
-                                              VerticalAlignment="Center"
-                                              Opacity="0.5"/>
-                                        <TextBlock Text="Sketch Preview" 
-                                                   Foreground="#5A7BA9" 
-                                                   FontSize="14" 
-                                                   HorizontalAlignment="Center" 
-                                                   VerticalAlignment="Bottom"
-                                                   Margin="0,0,0,10"/>
-                                    </Grid>
-                                </Border>
-                            </Grid>
-                        </Border>
-
-                        <!-- Dimensions Title -->
-                        <Border Grid.Row="1" 
-                                Background="{StaticResource AccentGradient}" 
-                                CornerRadius="12" 
-                                Padding="15,10" 
-                                Margin="0,0,0,15"
-                                Effect="{StaticResource SoftShadowEffect}">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Data="M17,13H13V17H11V13H7V11H11V7H13V11H17V13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" 
-                                      Fill="White" 
-                                      Width="20" 
-                                      Height="20" 
-                                      Stretch="Uniform" 
-                                      Margin="0,0,10,0"
-                                      VerticalAlignment="Center"/>
-                                <TextBlock Text="Dimensions" 
-                                           FontSize="18" 
-                                           FontWeight="SemiBold" 
-                                           Foreground="White"
-                                           FontFamily="Segoe UI"
-                                           VerticalAlignment="Center"/>
+                                <!-- Processing Steps -->
+                                <ItemsControl ItemsSource="{Binding ProcessingSteps}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Margin="20,2">
+                                                <Run Text="{Binding Status}"/>
+                                                <Run Text="{Binding Message}"/>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </Border>
 
-                        <!-- Dimensions List -->
-                        <Border Grid.Row="2" 
-                                Background="#1E304D" 
-                                CornerRadius="16" 
-                                Padding="0"
-                                Effect="{StaticResource SoftShadowEffect}">
-                            <ListView ItemsSource="{Binding SelectedSketch.Dimensions}" 
-                                      Style="{StaticResource FuturisticListView}"
-                                      Background="Transparent" 
-                                      BorderThickness="0">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Name" Width="160">
-                                            <GridViewColumn.HeaderContainerStyle>
-                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
-                                            </GridViewColumn.HeaderContainerStyle>
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Name}" 
-                                                               Foreground="{StaticResource TextPrimaryColor}" 
-                                                               Padding="10,8"/>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
+                        <!-- Analysis Results with specific actions per tab -->
+                        <TabControl Grid.Row="1">
+                            <!-- Extracted Requirements -->
+                            <TabItem Header="Extracted Requirements">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
 
-                                        <GridViewColumn Header="Value" Width="120">
-                                            <GridViewColumn.HeaderContainerStyle>
-                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
-                                            </GridViewColumn.HeaderContainerStyle>
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="#2A4066" 
-                                                            CornerRadius="6" 
-                                                            Padding="10,5" 
-                                                            Margin="5,2">
-                                                        <TextBlock Text="{Binding Value}" 
-                                                                   Foreground="{StaticResource TextPrimaryColor}" 
-                                                                   FontWeight="Medium"/>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
+                                    <DataGrid Grid.Row="0" ItemsSource="{Binding ExtractedRequirements}" 
+                                             AutoGenerateColumns="False">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Requirement" Binding="{Binding Text}" Width="*"/>
+                                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="100"/>
+                                            <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="80">
+                                                <DataGridTextColumn.ElementStyle>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Path=IsHighConfidence}" Value="True">
+                                                                <Setter Property="Foreground" Value="Green"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Path=IsLowConfidence}" Value="True">
+                                                                <Setter Property="Foreground" Value="Red"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </DataGridTextColumn.ElementStyle>
+                                            </DataGridTextColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
 
-                                        <GridViewColumn Header="Type" Width="150">
-                                            <GridViewColumn.HeaderContainerStyle>
-                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
-                                            </GridViewColumn.HeaderContainerStyle>
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal" Margin="5,2">
-                                                        <Border Width="24" 
-                                                                Height="24" 
-                                                                CornerRadius="12" 
-                                                                Margin="0,0,8,0"
-                                                                Background="{StaticResource AccentGradient}">
-                                                            <TextBlock Text="&#xE946;" 
-                                                                       Foreground="White" 
-                                                                       FontFamily="Segoe MDL2 Assets" 
-                                                                       HorizontalAlignment="Center" 
-                                                                       VerticalAlignment="Center"
-                                                                       FontSize="12"/>
-                                                        </Border>
-                                                        <TextBlock Text="{Binding Type}" 
-                                                                   VerticalAlignment="Center" 
-                                                                   Foreground="{StaticResource TextPrimaryColor}"/>
+                                    <!-- Action buttons specific to Requirements -->
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                        <Button Content="Approve All" Command="{Binding ApproveAllCommand}" 
+                                               Margin="5" Padding="15,5" IsEnabled="{Binding CanApprove}"/>
+                                        <Button Content="Review Each" Command="{Binding ReviewEachCommand}" 
+                                               Margin="5" Padding="15,5" IsEnabled="{Binding CanApprove}"/>
+                                        <Button Content="Re-analyze" Command="{Binding ReanalyzeCommand}" 
+                                               Margin="5" Padding="15,5"/>
+                                    </StackPanel>
+                                </Grid>
+                            </TabItem>
+
+                            <!-- Feature Mapping -->
+                            <TabItem Header="Feature Mapping">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <DataGrid Grid.Row="0" ItemsSource="{Binding FeatureMappings}" 
+                                             AutoGenerateColumns="False">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Requirement" Binding="{Binding Requirement}" Width="*"/>
+                                            <DataGridTextColumn Header="Target Feature" Binding="{Binding TargetFeature}" Width="150"/>
+                                            <DataGridTextColumn Header="Current Value" Binding="{Binding CurrentValue}" Width="100"/>
+                                            <DataGridTextColumn Header="New Value" Binding="{Binding NewValue}" Width="100"/>
+                                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+
+                                    <!-- Action buttons specific to Feature Mapping -->
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                        <Button Content="Validate Mappings" Command="{Binding ValidateMappingsCommand}" 
+                                               Margin="5" Padding="15,5"/>
+                                        <Button Content="Proceed to Processing" Command="{Binding ApproveAllCommand}" 
+                                               Margin="5" Padding="15,5" IsEnabled="{Binding CanApprove}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </TabItem>
+
+                            <!-- JSON Preview -->
+                            <TabItem Header="Modification JSON">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBox Grid.Row="0" Text="{Binding ModificationJSON}" 
+                                            TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                            FontFamily="Consolas" IsReadOnly="{Binding IsJSONReadOnly}"
+                                            Margin="0,0,0,5"/>
+
+                                    <!-- JSON-specific controls -->
+                                    <StackPanel Grid.Row="1">
+                                        <CheckBox Content="Enable Manual Editing" 
+                                                 IsChecked="{Binding EnableJSONEditing}" Margin="0,5"/>
+
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                            <Button Content="Validate JSON" Command="{Binding ValidateJSONCommand}" 
+                                                   Margin="5" Padding="15,5" IsEnabled="{Binding EnableJSONEditing}"/>
+                                            <Button Content="Apply Changes" Command="{Binding ApplyJSONCommand}" 
+                                                   Margin="5" Padding="15,5" IsEnabled="{Binding EnableJSONEditing}"/>
+                                            <Button Content="Reset to Original" Command="{Binding ResetJSONCommand}" 
+                                                   Margin="5" Padding="15,5"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </TabItem>
+
+                            <!-- Conflicts -->
+                            <TabItem Header="Conflicts">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <ListBox Grid.Row="0" ItemsSource="{Binding Conflicts}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="#FF6B6B" BorderThickness="1" 
+                                                       CornerRadius="5" Padding="10" Margin="5">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Title}" FontWeight="Bold" 
+                                                                  Foreground="#FF0000"/>
+                                                        <TextBlock Text="{Binding Description}" TextWrapping="Wrap" 
+                                                                  Margin="0,5,0,0"/>
+                                                        <TextBlock Text="{Binding Resolution}" FontStyle="Italic" 
+                                                                  Margin="0,5,0,0"/>
                                                     </StackPanel>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
 
-                                        <GridViewColumn Header="Units" Width="100">
-                                            <GridViewColumn.HeaderContainerStyle>
-                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
-                                            </GridViewColumn.HeaderContainerStyle>
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Units}" 
-                                                               Foreground="{StaticResource TextPrimaryColor}"
-                                                               Padding="10,8"/>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-
-                                        <GridViewColumn Header="Ref" Width="80">
-                                            <GridViewColumn.HeaderContainerStyle>
-                                                <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource DimensionHeaderStyle}"/>
-                                            </GridViewColumn.HeaderContainerStyle>
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <CheckBox IsChecked="{Binding IsReference}" 
-                                                              IsEnabled="False" 
-                                                              Foreground="{StaticResource TextPrimaryColor}"
-                                                              VerticalAlignment="Center"/>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
-                        </Border>
+                                    <!-- Conflict resolution actions -->
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                        <Button Content="Ignore Conflicts" Command="{Binding IgnoreConflictsCommand}" 
+                                               Margin="5" Padding="15,5"/>
+                                        <Button Content="Auto-Resolve" Command="{Binding AutoResolveCommand}" 
+                                               Margin="5" Padding="15,5"/>
+                                    </StackPanel>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
                     </Grid>
+                </TabItem>
 
-                    <!-- Loading Overlay -->
-                    <Grid Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Rectangle Fill="{StaticResource BlackOverlay}"/>
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Grid Width="80" Height="80">
-                                <Ellipse Fill="#1A2A45" 
-                                         Width="80" 
-                                         Height="80"/>
-                                <Path Data="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z" 
-                                      Fill="{StaticResource HighlightGradient}" 
-                                      Width="40" 
-                                      Height="40"
-                                      Stretch="Uniform"
-                                      RenderTransformOrigin="0.5,0.5">
-                                    <Path.RenderTransform>
-                                        <RotateTransform x:Name="LoadingAnimation" Angle="0"/>
-                                    </Path.RenderTransform>
-                                    <Path.Triggers>
-                                        <EventTrigger RoutedEvent="Path.Loaded">
-                                            <BeginStoryboard>
-                                                <Storyboard>
-                                                    <DoubleAnimation 
-                                                        Storyboard.TargetName="LoadingAnimation"
-                                                        Storyboard.TargetProperty="Angle"
-                                                        From="0" To="360" Duration="0:0:1"
-                                                        RepeatBehavior="Forever"/>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </EventTrigger>
-                                    </Path.Triggers>
-                                </Path>
-                            </Grid>
-                            <TextBlock Text="Loading..." 
-                                       FontSize="18" 
-                                       Foreground="{StaticResource TextPrimaryColor}" 
-                                       HorizontalAlignment="Center"
-                                       FontFamily="Segoe UI"
-                                       Margin="0,20,0,0"/>
+                <!-- Stage 3: SolidWorks Processing -->
+                <TabItem Header="SolidWorks Processing">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Overall Progress -->
+                        <Border Grid.Row="0" Background="#F0FFF0" CornerRadius="5" Padding="10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ProcessingStatusMessage}" FontSize="16" FontWeight="Bold"/>
+                                <ProgressBar Height="25" Margin="0,10" 
+                                            Value="{Binding ProcessingProgress}" Maximum="100">
+                                    <ProgressBar.Style>
+                                        <Style TargetType="ProgressBar">
+                                            <Setter Property="Foreground" Value="#4CAF50"/>
+                                        </Style>
+                                    </ProgressBar.Style>
+                                </ProgressBar>
+                                <TextBlock Text="{Binding CurrentOperation}" FontStyle="Italic" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Feature Processing List -->
+                        <Border Grid.Row="1" BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="5" Padding="10">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding FeatureProcessingStatus}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,2" Padding="10" CornerRadius="3"
+                                                   Background="{Binding BackgroundColor}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="30"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBlock Grid.Column="0" Text="{Binding StatusIcon}" 
+                                                              FontSize="16" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1" Margin="10,0">
+                                                        <TextBlock Text="{Binding FeatureName}" FontWeight="Bold"/>
+                                                        <TextBlock Text="{Binding Message}" FontSize="11" 
+                                                                  Foreground="Gray"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding ProcessingTime}" 
+                                                              FontSize="11" Foreground="Gray"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- Control Buttons -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                            <Button Content="Cancel" Command="{Binding CancelProcessingCommand}" 
+                                   Margin="5" Padding="15,5" Background="#FF6B6B" Foreground="White"
+                                   IsEnabled="{Binding IsProcessing}"/>
+                            <Button Content="Pause" Command="{Binding PauseProcessingCommand}" 
+                                   Margin="5" Padding="15,5"
+                                   IsEnabled="{Binding CanPauseProcessing}"/>
+                            <Button Content="Skip Current" Command="{Binding SkipCurrentCommand}" 
+                                   Margin="5" Padding="15,5"
+                                   IsEnabled="{Binding IsProcessing}"/>
                         </StackPanel>
                     </Grid>
-                </Grid>
+                </TabItem>
+            </TabControl>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="3" Width="3" HorizontalAlignment="Stretch" 
+                         Background="#CCCCCC" Cursor="SizeWE"/>
+
+            <!-- Right Panel - Results -->
+            <Border Grid.Column="4" BorderBrush="#CCCCCC" BorderThickness="1,0,0,0"
+                    Visibility="{Binding ShowResultsPanel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <!-- Success Summary -->
+                        <Border Background="#E8F5E9" CornerRadius="5" Padding="10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="Processing Summary" Style="{StaticResource SectionHeaderStyle}"/>
+                                <TextBlock Text="{Binding SuccessSummary}" FontSize="14" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ProcessingTime}" FontStyle="Italic" Foreground="Gray" 
+                                          Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Change Summary -->
+                        <Expander Header="Change Summary" IsExpanded="True" Margin="0,0,0,10">
+                            <DataGrid ItemsSource="{Binding ChangeSummary}" 
+                                     AutoGenerateColumns="False" MaxHeight="200">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Feature" Binding="{Binding Feature}" Width="*"/>
+                                    <DataGridTextColumn Header="Original" Binding="{Binding OriginalValue}" Width="70"/>
+                                    <DataGridTextColumn Header="New" Binding="{Binding NewValue}" Width="70"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="60"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Expander>
+
+                        <!-- Requirements Fulfillment -->
+                        <Expander Header="Requirements Status" IsExpanded="True" Margin="0,0,0,10">
+                            <ItemsControl ItemsSource="{Binding RequirementsFulfillment}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,2" Padding="5" CornerRadius="3"
+                                               Background="{Binding BackgroundColor}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="20"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding StatusIcon}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Requirement}" 
+                                                          TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Expander>
+
+                        <!-- Save Options -->
+                        <GroupBox Header="Save Modified Assembly" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="New Assembly Name:" Margin="0,5,0,2"/>
+                                <TextBox Text="{Binding NewAssemblyName}" Margin="0,0,0,10"/>
+
+                                <!-- Save Location Information -->
+                                <Border Background="#F0F8FF" CornerRadius="3" Padding="8" Margin="0,5,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Save Location:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                        <TextBlock Text="{Binding SaveLocationPath}" TextWrapping="Wrap" 
+                                                  FontFamily="Consolas" FontSize="11"/>
+                                        <TextBlock Text="A new folder will be created with all modified assembly files." 
+                                                  FontStyle="Italic" FontSize="11" Foreground="Gray" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Button Content="Save Modified Assembly" Command="{Binding SaveAssemblyCommand}" 
+                                       Padding="10,5" HorizontalAlignment="Stretch">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="#4CAF50"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                            <Setter Property="Cursor" Value="Hand"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#45a049"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Export Options -->
+                        <GroupBox Header="Export Reports" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <Button Content="Export Change Report (PDF)" 
+                                       Command="{Binding ExportPDFCommand}" 
+                                       Margin="0,2" Padding="5,3"/>
+                                <Button Content="Export Change Report (Excel)" 
+                                       Command="{Binding ExportExcelCommand}" 
+                                       Margin="0,2" Padding="5,3"/>
+                                <Button Content="Export Processing Log" 
+                                       Command="{Binding ExportLogCommand}" 
+                                       Margin="0,2" Padding="5,3"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
 
         <!-- Status Bar -->
-        <Border Grid.Row="2" 
-                Background="{StaticResource HeaderGradient}" 
-                Padding="30,14">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <StatusBar Grid.Row="3">
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Ellipse Width="10" 
-                             Height="10" 
-                             Fill="#00C853" 
-                             Margin="0,0,8,0"
-                             VerticalAlignment="Center"/>
-                    <TextBlock Text="Status:" 
-                               Foreground="{StaticResource TextSecondaryColor}"
-                               FontWeight="Medium"
-                               FontFamily="Segoe UI"
-                               VerticalAlignment="Center"/>
+            <StatusBarItem Grid.Column="0">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="10" Height="10" Fill="{Binding SolidWorksStatusColor}" Margin="0,0,5,0"/>
+                    <TextBlock Text="SolidWorks: "/>
+                    <TextBlock Text="{Binding SolidWorksStatus}"/>
                 </StackPanel>
+            </StatusBarItem>
 
-                <TextBlock Grid.Column="1" 
-                           Text="{Binding StatusMessage}" 
-                           Foreground="{StaticResource TextPrimaryColor}"
-                           Margin="10,0,0,0"
-                           VerticalAlignment="Center"
-                           FontFamily="Segoe UI"/>
+            <Separator Grid.Column="1" Margin="10,0"/>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <TextBlock Text="SOLIDWORKS Sketch Viewer v1.0" 
-                               Foreground="{StaticResource TextSecondaryColor}"
-                               FontFamily="Segoe UI Light"
-                               VerticalAlignment="Center"/>
+            <StatusBarItem Grid.Column="2">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="10" Height="10" Fill="{Binding LLMStatusColor}" Margin="0,0,5,0"/>
+                    <TextBlock Text="LLM API: "/>
+                    <TextBlock Text="{Binding LLMStatus}"/>
                 </StackPanel>
-            </Grid>
-        </Border>
+            </StatusBarItem>
+
+            <StatusBarItem Grid.Column="3" HorizontalAlignment="Center">
+                <TextBlock Text="{Binding ProjectStatus}"/>
+            </StatusBarItem>
+
+            <StatusBarItem Grid.Column="4">
+                <TextBlock Text="{Binding ElapsedTime}"/>
+            </StatusBarItem>
+        </StatusBar>
     </Grid>
 </Window>
