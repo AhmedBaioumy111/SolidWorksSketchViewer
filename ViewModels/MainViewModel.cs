@@ -936,24 +936,40 @@ namespace SolidWorksSketchViewer.ViewModels
             ShowMessage("Skipping current operation...");
         }
 
+
         private async void ExecuteSaveAssembly(object parameter)
         {
             try
             {
+                // Add a SaveFileDialog
+                var saveDialog = new SaveFileDialog
+                {
+                    Filter = "SolidWorks Assembly (*.sldasm)|*.sldasm",
+                    Title = "Save Modified Assembly As",
+                    FileName = $"{NewAssemblyName}_Modified",
+                    InitialDirectory = SaveLocationPath
+                };
+
+                if (saveDialog.ShowDialog() != true)
+                    return;
+
                 IsLoading = true;
                 StatusMessage = "Saving modified assembly...";
 
-                // Ensure save path exists
-                string saveFolder = SaveLocationPath;
-                if (!Directory.Exists(Path.GetDirectoryName(saveFolder)))
+                // Get folder and filename from dialog
+                string savePath = saveDialog.FileName;
+                string saveFolder = Path.GetDirectoryName(savePath);
+
+                // Ensure directory exists
+                if (!Directory.Exists(saveFolder))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(saveFolder));
+                    Directory.CreateDirectory(saveFolder);
                 }
 
-                // Call real save
+                // Call save with the user-selected path
                 var saveResult = await Task.Run(() =>
                     _solidWorksService.SaveAssemblyAs(
-                        Path.Combine(saveFolder, $"{NewAssemblyName}.sldasm"),
+                        savePath,
                         true  // Copy all referenced files
                     ));
 
@@ -1256,62 +1272,6 @@ namespace SolidWorksSketchViewer.ViewModels
                 ShowMessage($"Integration test failed: {ex.Message}");
             }
         }
-        #endregion
-
-        #region Example: How to Replace Mock Methods with Real Implementation
-       
-
-        /* Example 2: Replace mock LLM processing with real implementation
-        private async void ExecuteProcessRequirements(object parameter)
-        {
-            CurrentProcessingStage = 1;
-            IsLLMProcessing = true;
-            LLMStatusMessage = "Analyzing Requirements with AI...";
-            ProcessingSteps.Clear();
-
-            try
-            {
-                // Get assembly context
-                var assemblyContext = new AssemblyContext
-                {
-                    AssemblyName = SelectedAssemblyFile.FileName,
-                    AvailableFeatures = _solidWorksService.GetFeatureList()
-                };
-
-                // Call real LLM service
-                var result = await _llmService.AnalyzeRequirements(
-                    RequirementsText,
-                    assemblyContext,
-                    step => 
-                    {
-                        Application.Current.Dispatcher.Invoke(() => 
-                        {
-                            ProcessingSteps.Add(step);
-                        });
-                    }
-                );
-
-                // Update UI with results
-                ExtractedRequirements = new ObservableCollection<ExtractedRequirement>(
-                    result.ExtractedRequirements);
-                FeatureMappings = new ObservableCollection<FeatureMapping>(
-                    result.FeatureMappings);
-                Conflicts = new ObservableCollection<ConflictItem>(
-                    result.Conflicts);
-                ModificationJSON = result.ModificationJSON;
-
-                IsLLMProcessing = false;
-                LLMStatusMessage = "Analysis complete. Review modifications below.";
-            }
-            catch (Exception ex)
-            {
-                IsLLMProcessing = false;
-                LLMStatusMessage = $"Error: {ex.Message}";
-                ShowMessage($"LLM Analysis failed: {ex.Message}");
-            }
-        }
-        */
-
         #endregion
 
         public void Cleanup()

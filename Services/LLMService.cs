@@ -99,6 +99,25 @@ namespace SolidWorksSketchViewer.Services
             {
                 var lowerLine = line.ToLower();
 
+                // Look for scaling requirements
+                if (lowerLine.Contains("scale") || lowerLine.Contains("resize") ||
+                    lowerLine.Contains("make") && (lowerLine.Contains("larger") || lowerLine.Contains("smaller")) ||
+                    lowerLine.Contains("total size") || lowerLine.Contains("overall") ||
+                    lowerLine.Contains("x axis") || lowerLine.Contains("y axis") || lowerLine.Contains("z axis"))
+                {
+                    // Check if it mentions axis and size
+                    if ((lowerLine.Contains("x") || lowerLine.Contains("y") || lowerLine.Contains("z")) &&
+                        ExtractNumbers(line).Count > 0)
+                    {
+                        requirements.Add(new ExtractedRequirement
+                        {
+                            Text = line.Trim(),
+                            Type = "Scale",
+                            Confidence = 90 + _random.Next(10)
+                        });
+                    }
+                }
+
                 // Look for dimension changes
                 if (lowerLine.Contains("diameter") || lowerLine.Contains("radius") ||
                     lowerLine.Contains("length") || lowerLine.Contains("width") ||
@@ -170,6 +189,17 @@ namespace SolidWorksSketchViewer.Services
 
                 switch (req.Type)
                 {
+                    case "Scale":
+                        // Extract axis and target size
+                        string axis = ExtractAxis(req.Text);
+                        double targetSize = ExtractFirstNumber(req.Text);
+
+                        mapping.TargetFeature = $"Scale {axis} axis";
+                        mapping.CurrentValue = "Current dimensions";
+                        mapping.NewValue = $"{targetSize}mm on {axis} axis";
+                        break;
+
+
                     case "Dimension":
                         // Map to sketch dimensions
                         mapping.TargetFeature = $"Sketch{_random.Next(1, 5)} - D{_random.Next(1, 3)}@Sketch{_random.Next(1, 5)}";
@@ -201,6 +231,24 @@ namespace SolidWorksSketchViewer.Services
             }
 
             return mappings;
+        }
+
+        private string ExtractAxis(string text)
+        {
+            var lowerText = text.ToLower();
+
+            if (lowerText.Contains("x axis") || lowerText.Contains("x-axis") ||
+                lowerText.Contains("along x") || lowerText.Contains("in x"))
+                return "X";
+            else if (lowerText.Contains("y axis") || lowerText.Contains("y-axis") ||
+                     lowerText.Contains("along y") || lowerText.Contains("in y"))
+                return "Y";
+            else if (lowerText.Contains("z axis") || lowerText.Contains("z-axis") ||
+                     lowerText.Contains("along z") || lowerText.Contains("in z"))
+                return "Z";
+
+            // Default to X if not specified
+            return "X";
         }
 
         private List<ConflictItem> CheckForConflicts(List<FeatureMapping> mappings)
@@ -247,7 +295,21 @@ namespace SolidWorksSketchViewer.Services
 
             foreach (var mapping in mappings)
             {
-                if (mapping.TargetFeature.Contains("Sketch"))
+                if (mapping.TargetFeature.StartsWith("Scale"))
+                {
+                    // Extract axis from target feature
+                    string axis = mapping.TargetFeature.Contains("X") ? "X" :
+                                 mapping.TargetFeature.Contains("Y") ? "Y" : "Z";
+
+                    modifications.Add(new
+                    {
+                        type = "scale",
+                        axis = axis,
+                        targetSize = ExtractFirstNumber(mapping.NewValue) / 1000.0  // Convert mm to meters
+                    });
+                }
+
+                else if (mapping.TargetFeature.Contains("Sketch"))
                 {
                     modifications.Add(new
                     {

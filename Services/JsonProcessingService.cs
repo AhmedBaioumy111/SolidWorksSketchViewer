@@ -135,6 +135,15 @@ namespace SolidWorksSketchViewer.Services
                             parameters = featMod.Parameters
                         });
                     }
+                    else if (mod is ScaleModification scaleMod)
+                    {
+                        modificationObjects.Add(new
+                        {
+                            type = "scale",
+                            axis = scaleMod.Axis,
+                            targetSize = scaleMod.TargetSize
+                        });
+                    }
                 }
 
                 var jsonObject = new { modifications = modificationObjects };
@@ -166,6 +175,9 @@ namespace SolidWorksSketchViewer.Services
 
                 switch (type)
                 {
+                    case "scale":
+                        return ParseScaleModification(element, errors);
+
                     case "dimension":
                         return ParseDimensionModification(element, errors);
 
@@ -185,6 +197,29 @@ namespace SolidWorksSketchViewer.Services
                 errors.Add($"Error parsing modification: {ex.Message}");
                 return null;
             }
+        }
+
+        private Modification ParseScaleModification(JsonElement element, List<string> errors)
+        {
+            var mod = new Modification
+            {
+                Type = "scale",
+                Parameters = new Dictionary<string, object>()
+            };
+
+            // Required fields
+            if (element.TryGetProperty("axis", out JsonElement axis))
+                mod.Parameters["axis"] = axis.GetString();
+            else
+                errors.Add("Scale modification missing 'axis'");
+
+            if (element.TryGetProperty("targetSize", out JsonElement targetSize))
+                mod.Parameters["targetSize"] = targetSize.GetDouble();
+            else
+                errors.Add("Scale modification missing 'targetSize'");
+
+            return mod;
+
         }
 
         private Modification ParseDimensionModification(JsonElement element, List<string> errors)
@@ -359,6 +394,21 @@ namespace SolidWorksSketchViewer.Services
     {
         string Type { get; }
         string GetDescription();
+    }
+
+    /// <summary>
+    /// Scale modification
+    /// </summary>
+    public class ScaleModification : IModification
+    {
+        public string Type => "scale";
+        public string Axis { get; set; }
+        public double TargetSize { get; set; }
+
+        public string GetDescription()
+        {
+            return $"Scale {Axis} axis to target size {TargetSize}m";
+        }
     }
 
     /// <summary>

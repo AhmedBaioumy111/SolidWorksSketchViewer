@@ -150,13 +150,15 @@ namespace SolidWorksSketchViewer.Helpers
                         case "feature":
                             result = await ProcessFeatureModification(mod);
                             break;
-
+                        case "scale":
+                            result = await ProcessScalingModification(mod);
+                            break;
                         default:
                             result = new ModificationResult
                             {
                                 FeatureName = mod.FeatureName,
                                 Success = false,
-                                ErrorMessage = $"Unknown modification type: {mod.Type}"
+                                ErrorMessage = $"Unknown modification type: {mod.Type} from solidworksservice.cs"
                             };
                             break;
                     }
@@ -193,6 +195,38 @@ namespace SolidWorksSketchViewer.Helpers
             {
                 throw new Exception($"Error processing modifications: {ex.Message}", ex);
             }
+        }
+
+
+        public List<DimensionInfo> GetAllDimensions()
+        {
+            var allDimensions = new List<DimensionInfo>();
+
+            if (swAssembly == null) return allDimensions;
+
+            // Get all components
+            object[] components = (object[])swAssembly.GetComponents(false);
+
+            foreach (Component2 comp in components)
+            {
+                var partModel = (ModelDoc2)comp.GetModelDoc2();
+                if (partModel != null)
+                {
+                    var dims = ExtractDimensions(partModel);
+                    foreach (var (name, value, axis) in dims)
+                    {
+                        allDimensions.Add(new DimensionInfo
+                        {
+                            ComponentName = comp.Name2,
+                            DimensionName = name,
+                            Value = value,
+                            Axis = axis
+                        });
+                    }
+                }
+            }
+
+            return allDimensions;
         }
 
         #endregion
@@ -333,6 +367,102 @@ namespace SolidWorksSketchViewer.Helpers
             };
         }
 
+        public ScalingResult ScaleDimensionsByAxis(string axis, double newTargetSize)
+        {
+            var result = new ScalingResult
+            {
+                Success = true,
+                ModifiedDimensions = new List<string>()
+            };
+
+            try
+            {
+                // Find largest dimension along the specified axis
+                double largest = 0;
+                var allDimensions = GetAllDimensions();
+                // print
+
+
+                foreach (var dim in allDimensions)
+                {
+                    if (dim.Axis.Equals(axis, StringComparison.OrdinalIgnoreCase) && dim.Value > largest)
+                        largest = dim.Value;
+                }
+
+                if (largest == 0)
+                {
+                    result.Success = false;
+                    result.ErrorMessage = $"No dimension found along axis {axis}";
+                    return result;
+                }
+
+                double scaleRatio = newTargetSize / largest;
+                result.ScaleRatio = scaleRatio;
+
+                // Apply scaling to all dimensions on the specified axis
+                object[] components = (object[])swAssembly.GetComponents(false);
+
+                foreach (Component2 comp in components)
+                {
+                    var partModel = (ModelDoc2)comp.GetModelDoc2();
+                    if (partModel != null)
+                    {
+                        var dims = ExtractDimensions(partModel);
+                        foreach (var (dimName, value, dimAxis) in dims)
+                        {
+                            if (dimAxis.Equals(axis, StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    Dimension dim = (Dimension)partModel.Parameter(dimName);
+                                    double oldVal = dim.SystemValue;
+                                    dim.SystemValue = oldVal * scaleRatio;
+
+                                    result.ModifiedDimensions.Add(
+                                        $"{comp.Name2}: {dimName} updated from {oldVal:F4} to {oldVal * scaleRatio:F4}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    result.ModifiedDimensions.Add(
+                                        $"{comp.Name2}: Failed to update {dimName} — {ex.Message}");
+                                }
+                            }
+                        }
+
+                        partModel.EditRebuild3();
+                    }
+                }
+
+                // Rebuild assembly
+                swModel.ForceRebuild3(false);
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.ErrorMessage = ex.Message;
+            }
+
+            return result;
+        }
+
+        private async Task<ModificationResult> ProcessScalingModification(Modification mod)
+        {
+            await Task.Delay(100);
+
+            string axis = mod.Parameters["axis"]?.ToString() ?? "X";
+            double targetSize = Convert.ToDouble(mod.Parameters["targetSize"]);
+
+            var scalingResult = ScaleDimensionsByAxis(axis, targetSize);
+
+            return new ModificationResult
+            {
+                FeatureName = $"Scale {axis} axis",
+                Success = scalingResult.Success,
+                ErrorMessage = scalingResult.ErrorMessage,
+                OldValue = "Original dimensions",
+                NewValue = $"Scaled by {scalingResult.ScaleRatio:F4}"
+            };
+        }
         #endregion
 
         #region Material Modifications
@@ -915,25 +1045,95 @@ namespace SolidWorksSketchViewer.Helpers
             }
         }
 
+        private List<(string name, double value, string axis)> ExtractDimensions(ModelDoc2 model)
+        {
+            var dims = new List<(string, double, string)>();
+            Feature feature = (Feature)model.FirstFeature();
+
+            while (feature != null)
+            {
+                string type = feature.GetTypeName2();
+                if (type == "Sketch" || type == "ProfileFeature")
+                {
+                    DisplayDimension dispDim = (DisplayDimension)feature.GetFirstDisplayDimension();
+                    while (dispDim != null)
+                    {
+                        try
+                        {
+                            Dimension dim = (Dimension)dispDim.GetDimension();
+                            if (dim != null)
+                            {
+                                string name = dim.FullName;
+                                double value = dim.SystemValue;
+                                int dimType = dim.GetType();
+
+                                string axis;
+                                if (dimType == 0) axis = "X";
+                                else if (dimType == 1) axis = "Y";
+                                else if (dimType == 2) axis = "Z";
+                                else axis = "?";
+
+                                dims.Add((name, value, axis));
+                            }
+                        }
+                        catch { }
+
+                        dispDim = (DisplayDimension)feature.GetNextDisplayDimension(dispDim);
+                    }
+                }
+                feature = (Feature)feature.GetNextFeature();
+            }
+
+            return dims;
+        }
+
+
         private List<Modification> ParseModificationJson(string json)
         {
-            // Simple JSON parsing implementation
-            // In production, use Newtonsoft.Json or System.Text.Json
             var modifications = new List<Modification>();
 
-            // Mock implementation - replace with actual JSON parsing
             try
             {
-                // Example of what the parsed data might look like
-                modifications.Add(new Modification
+                using (var document = System.Text.Json.JsonDocument.Parse(json))
                 {
-                    Type = "dimension",
-                    FeatureName = "Sketch1",
-                    DimensionName = "D1@Sketch1",
-                    CurrentValue = 10.0,
-                    NewValue = 12.0,
-                    Units = "mm"
-                });
+                    var root = document.RootElement;
+
+                    if (root.TryGetProperty("modifications", out var modsElement))
+                    {
+                        foreach (var modElement in modsElement.EnumerateArray())
+                        {
+                            var mod = new Modification();
+
+                            if (modElement.TryGetProperty("type", out var typeElement))
+                                mod.Type = typeElement.GetString();
+
+                            if (mod.Type == "scale")
+                            {
+                                mod.Parameters = new Dictionary<string, object>();
+
+                                if (modElement.TryGetProperty("axis", out var axisElement))
+                                    mod.Parameters["axis"] = axisElement.GetString();
+
+                                if (modElement.TryGetProperty("targetSize", out var sizeElement))
+                                    mod.Parameters["targetSize"] = sizeElement.GetDouble();
+                            }
+                            else if (mod.Type == "dimension")
+                            {
+                                if (modElement.TryGetProperty("feature", out var featureElement))
+                                    mod.FeatureName = featureElement.GetString();
+
+                                if (modElement.TryGetProperty("dimension", out var dimElement))
+                                    mod.DimensionName = dimElement.GetString();
+
+                                if (modElement.TryGetProperty("newValue", out var newValElement))
+                                    mod.NewValue = newValElement.GetDouble();
+                            }
+                            // Add other modification types as needed
+
+                            modifications.Add(mod);
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -942,6 +1142,7 @@ namespace SolidWorksSketchViewer.Helpers
 
             return modifications;
         }
+
 
         #endregion
     }
@@ -1005,6 +1206,22 @@ namespace SolidWorksSketchViewer.Helpers
         public List<string> SavedFiles { get; set; }
         public long TotalSize { get; set; }
         public string ErrorMessage { get; set; }
+    }
+
+    public class DimensionInfo
+    {
+        public string ComponentName { get; set; }
+        public string DimensionName { get; set; }
+        public double Value { get; set; }
+        public string Axis { get; set; }
+    }
+
+    public class ScalingResult
+    {
+        public bool Success { get; set; }
+        public string ErrorMessage { get; set; }
+        public double ScaleRatio { get; set; }
+        public List<string> ModifiedDimensions { get; set; }
     }
 
     #endregion
