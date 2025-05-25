@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -170,6 +172,8 @@ namespace SolidWorksSketchViewer.ViewModels
             get => _assemblyThumbnail;
             set => SetProperty(ref _assemblyThumbnail, value);
         }
+
+        private List<string> _currentAssemblyFeatures;
 
         public ObservableCollection<BOMPreviewItem> BOMPreviewData
         {
@@ -471,9 +475,16 @@ namespace SolidWorksSketchViewer.ViewModels
 
             InitializeCollections();
             InitializeCommands();
-            InitializeMockData();
+            //InitializeMockData();
             StartTimer();
             UpdateSaveLocation();
+
+
+            // Auto-load files if working directory exists
+            if (Directory.Exists(WorkingDirectory))
+            {
+                Task.Run(async () => await RefreshAllFiles());
+            }
         }
 
         private void InitializeCollections()
@@ -549,37 +560,6 @@ namespace SolidWorksSketchViewer.ViewModels
             ExportLogCommand = new RelayCommand(_ => ShowMessage("Exporting processing log..."));
         }
 
-        private void InitializeMockData()
-        {
-            // Add mock assembly files
-            AssemblyFiles.Add(new FileItemModel
-            {
-                FileName = "Main_Assembly_v3.sldasm",
-                FileSize = "25.4 MB",
-                ValidationStatusColor = "Green"
-            });
-            AssemblyFiles.Add(new FileItemModel
-            {
-                FileName = "Sub_Assembly_Motor.sldasm",
-                FileSize = "12.1 MB",
-                ValidationStatusColor = "Green"
-            });
-            AssemblyFiles.Add(new FileItemModel
-            {
-                FileName = "Frame_Assembly.sldasm",
-                FileSize = "8.7 MB",
-                ValidationStatusColor = "Orange"
-            });
-
-            // Add mock BOM files
-            BOMFiles.Add(new FileItemModel { FileName = "BOM_Main_Assembly.xlsx", FileSize = "124 KB" });
-            BOMFiles.Add(new FileItemModel { FileName = "Parts_List_Rev2.csv", FileSize = "45 KB" });
-
-            // Add mock requirements files
-            RequirementsFiles.Add(new FileItemModel { FileName = "Customer_Requirements_v2.txt", FileSize = "12 KB" });
-            RequirementsFiles.Add(new FileItemModel { FileName = "Design_Specs_2025.docx", FileSize = "256 KB" });
-            RequirementsFiles.Add(new FileItemModel { FileName = "Dimension_Changes.json", FileSize = "4 KB" });
-        }
 
         private void StartTimer()
         {
@@ -619,13 +599,109 @@ namespace SolidWorksSketchViewer.ViewModels
             }
         }
 
-        private void ExecuteRefreshAssemblies(object parameter)
+        private async Task RefreshAllFiles()
         {
-            // Mock refresh - in real implementation, scan directory for files
-            StatusMessage = "Refreshing file list...";
-            // Add animation or actual file scanning here
-            StatusMessage = "File list refreshed";
+            await Task.Run(() =>
+            {
+                // Refresh all file types
+                RefreshAssemblyFiles();
+                RefreshBOMFiles();
+                RefreshRequirementsFiles();
+            });
         }
+
+        private async void RefreshBOMFiles()
+        {
+            try
+            {
+                var files = await Task.Run(() =>
+                    _fileService.GetBOMFiles(WorkingDirectory));
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    BOMFiles.Clear();
+                    foreach (var file in files)
+                    {
+                        BOMFiles.Add(file);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error loading BOM files: {ex.Message}";
+            }
+        }
+
+        private async void RefreshRequirementsFiles()
+        {
+            try
+            {
+                var files = await Task.Run(() =>
+                    _fileService.GetRequirementsFiles(WorkingDirectory));
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    RequirementsFiles.Clear();
+                    foreach (var file in files)
+                    {
+                        RequirementsFiles.Add(file);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error loading requirements files: {ex.Message}";
+            }
+        }
+
+        private async void RefreshAssemblyFiles()
+        {
+            try
+            {
+                var files = await Task.Run(() =>
+                    _fileService.GetAssemblyFiles(WorkingDirectory));
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    AssemblyFiles.Clear();
+                    foreach (var file in files)
+                    {
+                        AssemblyFiles.Add(file);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error loading assembly files: {ex.Message}";
+            }
+        }
+
+
+
+        private async void ExecuteRefreshAssemblies(object parameter)
+        {
+            try
+            {
+                StatusMessage = "Scanning for files...";
+                IsLoading = true;
+
+                // Refresh all file types
+                await RefreshAllFiles();
+
+                int totalFiles = AssemblyFiles.Count + BOMFiles.Count + RequirementsFiles.Count;
+                StatusMessage = $"Found {AssemblyFiles.Count} assemblies, {BOMFiles.Count} BOM files, {RequirementsFiles.Count} requirements";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+
+
 
         private async void ExecuteProcessRequirements(object parameter)
         {
@@ -634,250 +710,199 @@ namespace SolidWorksSketchViewer.ViewModels
             LLMStatusMessage = "Analyzing Requirements with AI...";
             ProcessingSteps.Clear();
 
-            // Simulate LLM processing steps
-            await SimulateLLMProcessing();
-        }
-
-        private async Task SimulateLLMProcessing()
-        {
-            var steps = new[]
+            try
             {
-                "Parsing requirements text...",
-                "Extracting dimensions and constraints...",
-                "Mapping to SolidWorks features...",
-                "Validating modifications...",
-                "Generating modification JSON..."
-            };
-
-            for (int i = 0; i < steps.Length; i++)
-            {
-                ProcessingSteps.Add(new ProcessingStep
+                // Create assembly context with real data
+                var assemblyContext = new AssemblyContext
                 {
-                    Status = "⏳",
-                    Message = steps[i]
+                    AssemblyName = SelectedAssemblyFile?.FileName,
+                    AvailableFeatures = _currentAssemblyFeatures ?? new List<string>()
+                };
+
+                // Call real LLM service
+                var result = await _llmService.AnalyzeRequirements(
+                    RequirementsText,
+                    assemblyContext,
+                    step =>
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            ProcessingSteps.Add(step);
+                        });
+                    }
+                );
+
+                // Update UI with real results
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    ExtractedRequirements.Clear();
+                    foreach (var req in result.ExtractedRequirements)
+                        ExtractedRequirements.Add(req);
+
+                    FeatureMappings.Clear();
+                    foreach (var mapping in result.FeatureMappings)
+                        FeatureMappings.Add(mapping);
+
+                    Conflicts.Clear();
+                    foreach (var conflict in result.Conflicts)
+                        Conflicts.Add(conflict);
+
+                    ModificationJSON = result.ModificationJSON;
                 });
 
-                LLMProgress = (i + 1) * 20;
-                await Task.Delay(1000);
-
-                ProcessingSteps[i].Status = "✓";
+                IsLLMProcessing = false;
+                LLMStatusMessage = "Analysis complete. Review modifications below.";
             }
-
-            // Generate mock extracted requirements
-            ExtractedRequirements.Clear();
-            ExtractedRequirements.Add(new ExtractedRequirement
+            catch (Exception ex)
             {
-                Text = "Increase hole diameter from 10mm to 12mm",
-                Type = "Dimension",
-                Confidence = 95
-            });
-            ExtractedRequirements.Add(new ExtractedRequirement
-            {
-                Text = "Change material to Aluminum 6061",
-                Type = "Material",
-                Confidence = 88
-            });
-            ExtractedRequirements.Add(new ExtractedRequirement
-            {
-                Text = "Add 5mm chamfer to all edges",
-                Type = "Feature",
-                Confidence = 72
-            });
-            ExtractedRequirements.Add(new ExtractedRequirement
-            {
-                Text = "Ensure minimum wall thickness of 3mm",
-                Type = "Constraint",
-                Confidence = 45
-            });
-
-            // Generate mock feature mappings
-            FeatureMappings.Clear();
-            FeatureMappings.Add(new FeatureMapping
-            {
-                Requirement = "Increase hole diameter",
-                TargetFeature = "Sketch3 - D1@Sketch3",
-                CurrentValue = "10mm",
-                NewValue = "12mm",
-                Status = "Valid"
-            });
-            FeatureMappings.Add(new FeatureMapping
-            {
-                Requirement = "Change material",
-                TargetFeature = "Part Properties",
-                CurrentValue = "Steel",
-                NewValue = "Aluminum 6061",
-                Status = "Valid"
-            });
-            FeatureMappings.Add(new FeatureMapping
-            {
-                Requirement = "Add chamfer",
-                TargetFeature = "Edge<1>, Edge<2>, Edge<3>",
-                CurrentValue = "None",
-                NewValue = "5mm Chamfer",
-                Status = "Warning"
-            });
-
-            // Add a mock conflict
-            Conflicts.Clear();
-            Conflicts.Add(new ConflictItem
-            {
-                Title = "Potential Over-constraint",
-                Description = "Adding 5mm chamfer to all edges may conflict with existing fillets on Edge<4> and Edge<5>",
-                Resolution = "Consider excluding edges with existing features or reducing chamfer size"
-            });
-
-            // Generate mock JSON
-            ModificationJSON = @"{
-  ""modifications"": [
-    {
-      ""type"": ""dimension"",
-      ""feature"": ""D1@Sketch3"",
-      ""currentValue"": 10.0,
-      ""newValue"": 12.0,
-      ""units"": ""mm""
-    },
-    {
-      ""type"": ""material"",
-      ""property"": ""Material"",
-      ""currentValue"": ""Steel"",
-      ""newValue"": ""Aluminum 6061""
-    },
-    {
-      ""type"": ""feature"",
-      ""operation"": ""add_chamfer"",
-      ""edges"": [""Edge<1>"", ""Edge<2>"", ""Edge<3>""],
-      ""value"": 5.0,
-      ""units"": ""mm""
-    }
-  ]
-}";
-
-            IsLLMProcessing = false;
-            LLMStatusMessage = "Analysis complete. Review modifications below.";
+                IsLLMProcessing = false;
+                LLMStatusMessage = $"Analysis failed: {ex.Message}";
+                ShowMessage($"LLM Analysis Error: {ex.Message}");
+            }
         }
+
 
         private async void ExecuteApproveAll(object parameter)
         {
             CurrentProcessingStage = 2; // Switch to SolidWorks Processing tab
-            await SimulateSolidWorksProcessing();
+            await ProcessSolidWorksModifications();
+
         }
 
-        private async Task SimulateSolidWorksProcessing()
+
+        private async Task ProcessSolidWorksModifications()
         {
             IsProcessing = true;
             CanPauseProcessing = true;
             ProcessingStatusMessage = "Modifying Assembly...";
             FeatureProcessingStatus.Clear();
 
-            var features = new[]
+            try
             {
-                ("Sketch3 - Dimension D1", true, ""),
-                ("Material Properties", true, ""),
-                ("Edge Chamfer Feature", false, "Overconstrained assembly"),
-                ("Sketch5 - Dimension D2", true, ""),
-                ("Mate3 - Distance", false, "Geometric conflict")
-            };
+                // Call real SolidWorks service
+                var results = await _solidWorksService.ProcessModifications(
+                    ModificationJSON,
+                    status =>
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            // Find and update existing status or add new
+                            var existing = FeatureProcessingStatus.FirstOrDefault(
+                                f => f.FeatureName == status.FeatureName);
 
-            for (int i = 0; i < features.Length; i++)
-            {
-                var (name, success, error) = features[i];
-                CurrentOperation = $"Processing: {name}";
-                ProcessingProgress = (i + 1) * 20;
+                            if (existing != null)
+                            {
+                                existing.StatusIcon = status.StatusIcon;
+                                existing.Message = status.Message;
+                                existing.ProcessingTime = status.ProcessingTime;
+                                existing.BackgroundColor = status.BackgroundColor;
+                            }
+                            else
+                            {
+                                FeatureProcessingStatus.Add(status);
+                            }
 
-                var status = new FeatureProcessingStatus
-                {
-                    FeatureName = name,
-                    StatusIcon = "⏳",
-                    Message = "Processing...",
-                    ProcessingTime = "0.0s",
-                    BackgroundColor = "#FFF3E0"
-                };
+                            // Update progress
+                            ProcessingProgress = (FeatureProcessingStatus.Count(f =>
+                                f.StatusIcon == "✓" || f.StatusIcon == "❌") * 100.0) /
+                                FeatureMappings.Count;
+                        });
+                    }
+                );
 
-                FeatureProcessingStatus.Add(status);
-                await Task.Delay(1500);
-
-                // Update status after processing
-                if (success)
-                {
-                    status.StatusIcon = "✓";
-                    status.Message = "Successfully modified";
-                    status.BackgroundColor = "#E8F5E9";
-                }
-                else
-                {
-                    status.StatusIcon = "❌";
-                    status.Message = error;
-                    status.BackgroundColor = "#FFEBEE";
-                }
-                status.ProcessingTime = $"{_random.Next(100, 2000) / 1000.0:F1}s";
+                // Update results
+                UpdateResultsFromProcessing(results);
             }
-
-            IsProcessing = false;
-            CanPauseProcessing = false;
-            ProcessingStatusMessage = "Processing complete";
-            CurrentOperation = "";
-
-            // Update results
-            UpdateResults();
+            catch (Exception ex)
+            {
+                ShowMessage($"Processing Error: {ex.Message}");
+            }
+            finally
+            {
+                IsProcessing = false;
+                CanPauseProcessing = false;
+                ProcessingStatusMessage = "Processing complete";
+                CurrentOperation = "";
+            }
         }
 
-        private void UpdateResults()
+
+
+        private void UpdateResultsFromProcessing(List<ModificationResult> results)
         {
-            SuccessSummary = "12 of 15 requirements successfully applied\nAssembly modified and saved";
-            ProcessingTime = "Total processing time: 2 minutes 34 seconds";
+            int successCount = results.Count(r => r.Success);
+            int totalCount = results.Count;
+
+            SuccessSummary = $"{successCount} of {totalCount} modifications successfully applied";
+            ProcessingTime = $"Processing completed at {DateTime.Now:HH:mm:ss}";
 
             // Update change summary
             ChangeSummary.Clear();
-            ChangeSummary.Add(new ChangeSummaryItem
+            foreach (var result in results)
             {
-                Feature = "D1@Sketch3",
-                OriginalValue = "10mm",
-                NewValue = "12mm",
-                Status = "✓"
-            });
-            ChangeSummary.Add(new ChangeSummaryItem
-            {
-                Feature = "Material",
-                OriginalValue = "Steel",
-                NewValue = "Al 6061",
-                Status = "✓"
-            });
-            ChangeSummary.Add(new ChangeSummaryItem
-            {
-                Feature = "Chamfer1",
-                OriginalValue = "None",
-                NewValue = "Failed",
-                Status = "❌"
-            });
+                ChangeSummary.Add(new ChangeSummaryItem
+                {
+                    Feature = result.FeatureName,
+                    OriginalValue = result.OldValue,
+                    NewValue = result.NewValue,
+                    Status = result.Success ? "✓" : "❌"
+                });
+            }
 
-            // Update requirements fulfillment
-            RequirementsFulfillment.Clear();
-            RequirementsFulfillment.Add(new RequirementsFulfillmentItem
-            {
-                Requirement = "Increase hole diameter from 10mm to 12mm",
-                StatusIcon = "✓",
-                BackgroundColor = "#E8F5E9"
-            });
-            RequirementsFulfillment.Add(new RequirementsFulfillmentItem
-            {
-                Requirement = "Change material to Aluminum 6061",
-                StatusIcon = "✓",
-                BackgroundColor = "#E8F5E9"
-            });
-            RequirementsFulfillment.Add(new RequirementsFulfillmentItem
-            {
-                Requirement = "Add 5mm chamfer to all edges",
-                StatusIcon = "❌",
-                BackgroundColor = "#FFEBEE"
-            });
-            RequirementsFulfillment.Add(new RequirementsFulfillmentItem
-            {
-                Requirement = "Ensure minimum wall thickness of 3mm",
-                StatusIcon = "⚠",
-                BackgroundColor = "#FFF3E0"
-            });
+            // Update requirements fulfillment based on results
+            UpdateRequirementsFulfillment(results);
         }
 
+
+        private void UpdateRequirementsFulfillment(List<ModificationResult> results)
+        {
+            RequirementsFulfillment.Clear();
+
+            // Map each extracted requirement to its fulfillment status
+            foreach (var requirement in ExtractedRequirements)
+            {
+                // Find related modifications for this requirement
+                var relatedResults = results.Where(r =>
+                    r.FeatureName.Contains(requirement.Text.Split(' ').FirstOrDefault() ?? "") ||
+                    requirement.Text.ToLower().Contains(r.FeatureName.ToLower())
+                ).ToList();
+
+                string statusIcon;
+                string backgroundColor;
+
+                if (!relatedResults.Any())
+                {
+                    // No modifications found for this requirement
+                    statusIcon = "⚠";
+                    backgroundColor = "#FFF3E0"; // Yellow
+                }
+                else if (relatedResults.All(r => r.Success))
+                {
+                    // All related modifications succeeded
+                    statusIcon = "✓";
+                    backgroundColor = "#E8F5E9"; // Green
+                }
+                else if (relatedResults.Any(r => r.Success))
+                {
+                    // Some succeeded, some failed
+                    statusIcon = "⚠";
+                    backgroundColor = "#FFF3E0"; // Yellow
+                }
+                else
+                {
+                    // All failed
+                    statusIcon = "❌";
+                    backgroundColor = "#FFEBEE"; // Red
+                }
+
+                RequirementsFulfillment.Add(new RequirementsFulfillmentItem
+                {
+                    Requirement = requirement.Text,
+                    StatusIcon = statusIcon,
+                    BackgroundColor = backgroundColor
+                });
+            }
+        }
         private void ExecuteReviewEach(object parameter)
         {
             ShowMessage("Review Each functionality would allow step-by-step approval");
@@ -911,29 +936,76 @@ namespace SolidWorksSketchViewer.ViewModels
             ShowMessage("Skipping current operation...");
         }
 
-        private void ExecuteSaveAssembly(object parameter)
+        private async void ExecuteSaveAssembly(object parameter)
         {
-            string message = $"Creating new folder and saving assembly as:\n{SaveLocationPath}\\{NewAssemblyName}.sldasm\n\nAll related files will be copied to the new folder.";
-            ShowMessage(message);
+            try
+            {
+                IsLoading = true;
+                StatusMessage = "Saving modified assembly...";
+
+                // Ensure save path exists
+                string saveFolder = SaveLocationPath;
+                if (!Directory.Exists(Path.GetDirectoryName(saveFolder)))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(saveFolder));
+                }
+
+                // Call real save
+                var saveResult = await Task.Run(() =>
+                    _solidWorksService.SaveAssemblyAs(
+                        Path.Combine(saveFolder, $"{NewAssemblyName}.sldasm"),
+                        true  // Copy all referenced files
+                    ));
+
+                if (saveResult.Success)
+                {
+                    string fileList = string.Join("\n", saveResult.SavedFiles.Take(5));
+                    if (saveResult.SavedFiles.Count > 5)
+                        fileList += $"\n... and {saveResult.SavedFiles.Count - 5} more files";
+
+                    ShowMessage($"Assembly saved successfully!\n\nLocation: {saveFolder}\n\nFiles saved:\n{fileList}");
+                }
+                else
+                {
+                    ShowMessage($"Save failed: {saveResult.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowMessage($"Save Error: {ex.Message}");
+            }
+            finally
+            {
+                IsLoading = false;
+                StatusMessage = "Ready";
+            }
         }
+
 
         // New JSON Tab Commands
         private void ExecuteValidateJSON(object parameter)
         {
             try
             {
-                // In real implementation, parse and validate JSON
-                // For now, just check if it's valid JSON syntax
-                using (var doc = System.Text.Json.JsonDocument.Parse(ModificationJSON))
+                // Use real JSON validation service
+                var validationResult = _jsonService.ValidateModificationJson(ModificationJSON);
+
+                if (validationResult.IsValid)
                 {
                     ShowMessage("JSON is valid and ready to apply!");
+                }
+                else
+                {
+                    string errors = string.Join("\n", validationResult.ErrorMessages);
+                    ShowMessage($"JSON Validation Errors:\n\n{errors}");
                 }
             }
             catch (Exception ex)
             {
-                ShowMessage($"JSON Validation Error:\n{ex.Message}");
+                ShowMessage($"Validation Error: {ex.Message}");
             }
         }
+
 
         private void ExecuteApplyJSON(object parameter)
         {
@@ -1047,16 +1119,42 @@ namespace SolidWorksSketchViewer.ViewModels
         #endregion
 
         #region Helper Methods
-        private void UpdateAssemblyPreview()
+        private async void UpdateAssemblyPreview()
         {
             if (SelectedAssemblyFile != null)
             {
-                AssemblyName = SelectedAssemblyFile.FileName;
-                AssemblyPartCount = _random.Next(10, 100).ToString();
-                AssemblyFileSize = SelectedAssemblyFile.FileSize;
-                // In real implementation, load actual thumbnail
-                AssemblyThumbnail = null;
-                UpdateSaveLocation();
+                try
+                {
+                    IsLoading = true;
+                    StatusMessage = "Opening assembly...";
+
+                    // Open real assembly
+                    var assemblyInfo = await Task.Run(() =>
+                        _solidWorksService.OpenAssembly(SelectedAssemblyFile.FilePath));
+
+                    // Update UI with real data
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        AssemblyName = assemblyInfo.Name;
+                        AssemblyPartCount = assemblyInfo.PartCount.ToString();
+                        AssemblyFileSize = SelectedAssemblyFile.FileSize;
+                        AssemblyThumbnail = assemblyInfo.ThumbnailPath;
+
+                        // Store features for later use
+                        _currentAssemblyFeatures = assemblyInfo.Features;
+                    });
+
+                    StatusMessage = "Assembly loaded successfully";
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = $"Failed to open assembly: {ex.Message}";
+                }
+                finally
+                {
+                    IsLoading = false;
+                    UpdateSaveLocation();
+                }
             }
         }
 
@@ -1075,59 +1173,48 @@ namespace SolidWorksSketchViewer.ViewModels
             }
         }
 
-        private void UpdateBOMPreview()
+        private async void UpdateBOMPreview()
         {
             if (SelectedBOMFile != null)
             {
-                BOMPreviewData.Clear();
-                // Generate mock BOM data
-                var parts = new[] { "Motor Mount", "Bearing Housing", "Shaft", "Cover Plate", "Fastener Set" };
-                var materials = new[] { "Aluminum 6061", "Steel 1045", "Stainless 316", "ABS Plastic" };
-
-                foreach (var part in parts)
+                try
                 {
-                    BOMPreviewData.Add(new BOMPreviewItem
+                    BOMPreviewData.Clear();
+
+                    // Read real BOM file
+                    var bomItems = await Task.Run(() =>
+                        _fileService.ReadBOMFile(SelectedBOMFile.FilePath));
+
+                    // Update UI
+                    Application.Current.Dispatcher.Invoke(() =>
                     {
-                        PartName = part,
-                        Quantity = _random.Next(1, 10),
-                        Material = materials[_random.Next(materials.Length)],
-                        Description = $"Component for main assembly"
+                        foreach (var item in bomItems)
+                        {
+                            BOMPreviewData.Add(item);
+                        }
                     });
+                }
+                catch (Exception ex)
+                {
+                    ShowMessage($"Error reading BOM: {ex.Message}");
                 }
             }
         }
 
-        private void UpdateRequirementsPreview()
+        private async void UpdateRequirementsPreview()
         {
             if (SelectedRequirementsFile != null)
             {
-                // Generate mock requirements text
-                RequirementsText = @"DESIGN REQUIREMENTS - Rev 2.0
-===============================
-
-1. DIMENSIONAL CHANGES:
-   - Increase main bore diameter from 10mm to 12mm
-   - Adjust mounting hole spacing to 85mm centers
-   - Reduce overall height by 15mm
-
-2. MATERIAL SPECIFICATIONS:
-   - Change base material from Steel to Aluminum 6061-T6
-   - Apply anodized finish (black)
-   
-3. FEATURE MODIFICATIONS:
-   - Add 5mm chamfer to all exposed edges
-   - Include drainage groove (3mm wide, 2mm deep)
-   - Add M6 threaded inserts at mounting points
-
-4. CONSTRAINTS:
-   - Maintain minimum wall thickness of 3mm
-   - Ensure clearance of 2mm between moving parts
-   - Weight must not exceed 1.2kg
-
-5. ASSEMBLY REQUIREMENTS:
-   - Parts must be assembled without special tools
-   - Include alignment features for assembly
-   - Maintain backward compatibility with Rev 1.0";
+                try
+                {
+                    // Read real requirements file
+                    RequirementsText = await Task.Run(() =>
+                        _fileService.ReadRequirementsFile(SelectedRequirementsFile.FilePath));
+                }
+                catch (Exception ex)
+                {
+                    RequirementsText = $"Error reading file: {ex.Message}";
+                }
             }
         }
 
@@ -1172,37 +1259,7 @@ namespace SolidWorksSketchViewer.ViewModels
         #endregion
 
         #region Example: How to Replace Mock Methods with Real Implementation
-
-        /* Example 1: Replace mock file refresh with real implementation
-        private async void ExecuteRefreshAssemblies(object parameter)
-        {
-            try
-            {
-                StatusMessage = "Refreshing file list...";
-                IsLoading = true;
-                
-                // Call real service instead of mock
-                var files = await Task.Run(() => 
-                    _fileService.GetAssemblyFiles(WorkingDirectory));
-                
-                AssemblyFiles.Clear();
-                foreach (var file in files)
-                {
-                    AssemblyFiles.Add(file);
-                }
-                
-                StatusMessage = $"Found {files.Count} assembly files";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error: {ex.Message}";
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-        */
+       
 
         /* Example 2: Replace mock LLM processing with real implementation
         private async void ExecuteProcessRequirements(object parameter)

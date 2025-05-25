@@ -52,6 +52,81 @@ namespace SolidWorksSketchViewer.Services
         }
 
         /// <summary>
+        /// Scans directory for BOM files (Excel, CSV)
+        /// </summary>
+        public List<FileItemModel> GetBOMFiles(string directoryPath)
+        {
+            var files = new List<FileItemModel>();
+
+            try
+            {
+                if (!Directory.Exists(directoryPath))
+                    return files;
+
+                // Get Excel and CSV files
+                var bomFiles = Directory.GetFiles(directoryPath, "*.xlsx", SearchOption.AllDirectories)
+                    .Union(Directory.GetFiles(directoryPath, "*.xls", SearchOption.AllDirectories))
+                    .Union(Directory.GetFiles(directoryPath, "*.csv", SearchOption.AllDirectories));
+
+                foreach (var file in bomFiles)
+                {
+                    var fileInfo = new FileInfo(file);
+                    files.Add(new FileItemModel
+                    {
+                        FileName = fileInfo.Name,
+                        FilePath = fileInfo.FullName,
+                        FileSize = FormatFileSize(fileInfo.Length),
+                        LastModified = fileInfo.LastWriteTime,
+                        ValidationStatusColor = "Green"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error scanning for BOM files: {ex.Message}");
+            }
+
+            return files;
+        }
+
+        /// <summary>
+        /// Scans directory for Requirements files (txt, docx, json)
+        /// </summary>
+        public List<FileItemModel> GetRequirementsFiles(string directoryPath)
+        {
+            var files = new List<FileItemModel>();
+
+            try
+            {
+                if (!Directory.Exists(directoryPath))
+                    return files;
+
+                // Get text, Word, and JSON files
+                var reqFiles = Directory.GetFiles(directoryPath, "*.txt", SearchOption.AllDirectories)
+                    .Union(Directory.GetFiles(directoryPath, "*.docx", SearchOption.AllDirectories))
+                    .Union(Directory.GetFiles(directoryPath, "*.json", SearchOption.AllDirectories));
+
+                foreach (var file in reqFiles)
+                {
+                    var fileInfo = new FileInfo(file);
+                    files.Add(new FileItemModel
+                    {
+                        FileName = fileInfo.Name,
+                        FilePath = fileInfo.FullName,
+                        FileSize = FormatFileSize(fileInfo.Length),
+                        LastModified = fileInfo.LastWriteTime,
+                        ValidationStatusColor = "Green"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error scanning for requirements files: {ex.Message}");
+            }
+
+            return files;
+        }
+        /// <summary>
         /// Validates SolidWorks assembly file
         /// </summary>
         public FileValidationResult ValidateAssemblyFile(string filePath)
