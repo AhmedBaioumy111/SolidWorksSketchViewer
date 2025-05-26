@@ -189,6 +189,9 @@ namespace SolidWorksSketchViewer.Helpers
                 // Force rebuild if needed
                 swModel.ForceRebuild3(false);
 
+                // CRITICAL: Save the modified assembly and all referenced parts
+                SaveAllModifiedDocuments();
+
                 return results;
             }
             catch (Exception ex)
@@ -284,7 +287,10 @@ namespace SolidWorksSketchViewer.Helpers
                 }
 
                 // Rebuild to apply changes
-                swModel.EditRebuild3();
+                swModel.ForceRebuild3(true); // Force rebuild with update
+
+                // Mark document as modified
+                swModel.SetSaveFlag();
 
                 return new DimensionModificationResult
                 {
@@ -293,6 +299,8 @@ namespace SolidWorksSketchViewer.Helpers
                     NewValue = newValue,
                     Units = GetDimensionUnits(dim)
                 };
+
+
             }
             catch (Exception ex)
             {
@@ -306,7 +314,6 @@ namespace SolidWorksSketchViewer.Helpers
 
         private async Task<ModificationResult> ProcessDimensionModification(Modification mod)
         {
-            await Task.Delay(100); // Simulate async operation
 
             var dimResult = ModifyDimension(
                 mod.FeatureName,
@@ -314,38 +321,36 @@ namespace SolidWorksSketchViewer.Helpers
                 Convert.ToDouble(mod.NewValue)
             );
 
-            return new ModificationResult
+            return await Task.FromResult(new ModificationResult
             {
                 FeatureName = mod.FeatureName,
                 Success = dimResult.Success,
                 ErrorMessage = dimResult.ErrorMessage,
                 OldValue = dimResult.OldValue.ToString(),
                 NewValue = dimResult.NewValue.ToString()
-            };
+            });
         }
 
         private async Task<ModificationResult> ProcessMaterialModification(Modification mod)
         {
-            await Task.Delay(100); // Simulate async operation
 
             var matResult = ChangeMaterial(
                 mod.FeatureName,
                 mod.NewValue?.ToString() ?? ""
             );
 
-            return new ModificationResult
+            return await Task.FromResult(new ModificationResult
             {
                 FeatureName = mod.FeatureName,
                 Success = matResult.Success,
                 ErrorMessage = matResult.ErrorMessage,
                 OldValue = matResult.OldMaterial,
                 NewValue = matResult.NewMaterial
-            };
+            });
         }
 
         private async Task<ModificationResult> ProcessFeatureModification(Modification mod)
         {
-            await Task.Delay(100); // Simulate async operation
 
             var edges = mod.Parameters?.ContainsKey("edges") == true
                 ? mod.Parameters["edges"] as List<string>
@@ -357,14 +362,33 @@ namespace SolidWorksSketchViewer.Helpers
                 mod.Parameters ?? new Dictionary<string, object>()
             );
 
-            return new ModificationResult
+            return await Task.FromResult(new ModificationResult
             {
                 FeatureName = featureResult.FeatureName ?? mod.FeatureName,
                 Success = featureResult.Success,
                 ErrorMessage = featureResult.ErrorMessage,
                 OldValue = "None",
                 NewValue = mod.Type
-            };
+            });
+        }
+
+
+        private async Task<ModificationResult> ProcessScalingModification(Modification mod)
+        {
+
+            string axis = mod.Parameters["axis"]?.ToString() ?? "X";
+            double targetSize = Convert.ToDouble(mod.Parameters["targetSize"]);
+
+            var scalingResult = ScaleDimensionsByAxis(axis, targetSize);
+
+            return await Task.FromResult(new ModificationResult
+            {
+                FeatureName = $"Scale {axis} axis",
+                Success = scalingResult.Success,
+                ErrorMessage = scalingResult.ErrorMessage,
+                OldValue = "Original dimensions",
+                NewValue = $"Scaled by {scalingResult.ScaleRatio:F4}"
+            });
         }
 
         public ScalingResult ScaleDimensionsByAxis(string axis, double newTargetSize)
@@ -429,7 +453,8 @@ namespace SolidWorksSketchViewer.Helpers
                             }
                         }
 
-                        partModel.EditRebuild3();
+                        partModel.ForceRebuild3(true);
+                        partModel.SetSaveFlag();
                     }
                 }
 
@@ -445,24 +470,6 @@ namespace SolidWorksSketchViewer.Helpers
             return result;
         }
 
-        private async Task<ModificationResult> ProcessScalingModification(Modification mod)
-        {
-            await Task.Delay(100);
-
-            string axis = mod.Parameters["axis"]?.ToString() ?? "X";
-            double targetSize = Convert.ToDouble(mod.Parameters["targetSize"]);
-
-            var scalingResult = ScaleDimensionsByAxis(axis, targetSize);
-
-            return new ModificationResult
-            {
-                FeatureName = $"Scale {axis} axis",
-                Success = scalingResult.Success,
-                ErrorMessage = scalingResult.ErrorMessage,
-                OldValue = "Original dimensions",
-                NewValue = $"Scaled by {scalingResult.ScaleRatio:F4}"
-            };
-        }
         #endregion
 
         #region Material Modifications
@@ -520,7 +527,10 @@ namespace SolidWorksSketchViewer.Helpers
                         );
                     }
                 }
+                swModel.ForceRebuild3(true); // Force rebuild with update
 
+                // Mark document as modified
+                swModel.SetSaveFlag();
                 return new MaterialChangeResult
                 {
                     Success = true,
@@ -630,7 +640,8 @@ namespace SolidWorksSketchViewer.Helpers
                 0,                    // DOverride2
                 0                     // VertexChamDist3
             );
-
+            // Mark document as modified
+            swModel.SetSaveFlag();
             return (Feature)swModel.FeatureByPositionReverse(0);
         }
 
@@ -668,7 +679,8 @@ namespace SolidWorksSketchViewer.Helpers
                     null,               // SetBackDistances
                     null                // PointRadiusArray
                 );
-
+                // Mark document as modified
+                swModel.SetSaveFlag();
                 return filletFeature;
             }
             catch
@@ -732,6 +744,56 @@ namespace SolidWorksSketchViewer.Helpers
         #endregion
 
         #region Save Operations
+
+        /// <summary>
+        /// Saves all modified documents in the current session
+        /// </summary>
+        private void SaveAllModifiedDocuments()
+        {
+            try
+            {
+                if (swModel == null) return;
+
+                // Save the assembly
+                int errors = 0;
+                int warnings = 0;
+
+                bool saveResult = swModel.Save3(
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent |
+                    (int)swSaveAsOptions_e.swSaveAsOptions_SaveReferenced,
+                    ref errors,
+                    ref warnings
+                );
+
+                if (!saveResult)
+                {
+                    throw new Exception($"Failed to save assembly. Errors: {errors}, Warnings: {warnings}");
+                }
+
+                // Also save all modified components
+                if (swAssembly != null)
+                {
+                    object[] components = (object[])swAssembly.GetComponents(false);
+
+                    foreach (Component2 comp in components)
+                    {
+                        ModelDoc2 compDoc = (ModelDoc2)comp.GetModelDoc2();
+                        if (compDoc != null && compDoc.GetSaveFlag())
+                        {
+                            compDoc.Save3(
+                                (int)swSaveAsOptions_e.swSaveAsOptions_Silent,
+                                ref errors,
+                                ref warnings
+                            );
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error saving modifications: {ex.Message}", ex);
+            }
+        }
 
         /// <summary>
         /// Saves assembly to new location with all references
@@ -827,15 +889,51 @@ namespace SolidWorksSketchViewer.Helpers
 
         #endregion
 
+
         #region Helper Methods
 
-        private void CloseDocument()
+        /// <summary>
+        /// Closes all open documents
+        /// </summary>
+        public void CloseAllDocuments()
+        {
+            try
+            {
+                if (swApp != null)
+                {
+                    // Close all documents
+                    swApp.CloseAllDocuments(true);
+
+                    // Clear references
+                    swModel = null;
+                    swAssembly = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log but don't throw - we want to continue even if close fails
+                System.Diagnostics.Debug.WriteLine($"Error closing documents: {ex.Message}");
+            }
+        }
+
+
+        public void CloseDocument()
         {
             if (swModel != null)
             {
-                swApp.CloseDoc(swModel.GetTitle());
-                swModel = null;
-                swAssembly = null;
+                try
+                {
+                    swApp.CloseDoc(swModel.GetTitle());
+                }
+                catch
+                {
+                    // Ignore errors during close
+                }
+                finally
+                {
+                    swModel = null;
+                    swAssembly = null;
+                }
             }
         }
 
@@ -1143,6 +1241,90 @@ namespace SolidWorksSketchViewer.Helpers
             return modifications;
         }
 
+        /// <summary>
+        /// Copies assembly and all referenced files to a folder
+        /// </summary>
+        public CopyAssemblyResult CopyAssemblyToFolder(string assemblyPath, string destinationFolder)
+        {
+            try
+            {
+                var result = new CopyAssemblyResult
+                {
+                    CopiedFiles = new List<string>()
+                };
+
+                // Open assembly temporarily to get Pack and Go
+                int errors = 0;
+                int warnings = 0;
+                ModelDoc2 tempModel = swApp.OpenDoc6(
+                    assemblyPath,
+                    (int)swDocumentTypes_e.swDocASSEMBLY,
+                    (int)swOpenDocOptions_e.swOpenDocOptions_Silent | (int)swOpenDocOptions_e.swOpenDocOptions_ReadOnly,
+                    "",
+                    ref errors,
+                    ref warnings
+                );
+
+                if (tempModel == null)
+                {
+                    result.Success = false;
+                    result.ErrorMessage = "Failed to open assembly for copying";
+                    return result;
+                }
+
+                try
+                {
+                    // Use Pack and Go to copy all files
+                    PackAndGo packAndGo = tempModel.Extension.GetPackAndGo();
+
+                    packAndGo.IncludeDrawings = false;
+                    packAndGo.IncludeSimulationResults = false;
+                    packAndGo.IncludeToolboxComponents = true;
+                    packAndGo.IncludeSuppressed = true;
+
+                    // Set destination
+                    packAndGo.SetSaveToName(true, destinationFolder);
+
+                    // Get all files that will be copied
+                    object fileNames;
+                    object fileStatus;
+                    packAndGo.GetDocumentNames(out fileNames);
+                    packAndGo.GetDocumentSaveToNames(out fileNames, out fileStatus);
+
+                    // Perform Pack and Go
+                    int[] statuses = (int[])tempModel.Extension.SavePackAndGo(packAndGo);
+
+                    string[] copiedFiles = (string[])fileNames;
+                    result.CopiedFiles.AddRange(copiedFiles);
+
+                    result.Success = true;
+                }
+                finally
+                {
+                    // Close the temp model
+                    swApp.CloseDoc(tempModel.GetTitle());
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new CopyAssemblyResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        // Add result class at the bottom with other result classes
+        public class CopyAssemblyResult
+        {
+            public bool Success { get; set; }
+            public List<string> CopiedFiles { get; set; }
+            public string ErrorMessage { get; set; }
+        }
+
 
         #endregion
     }
@@ -1223,6 +1405,8 @@ namespace SolidWorksSketchViewer.Helpers
         public double ScaleRatio { get; set; }
         public List<string> ModifiedDimensions { get; set; }
     }
+
+
 
     #endregion
 }

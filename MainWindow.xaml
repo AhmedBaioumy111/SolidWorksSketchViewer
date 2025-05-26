@@ -56,11 +56,7 @@
                 <Separator/>
                 <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
             </MenuItem>
-            <MenuItem Header="_Process">
-                <MenuItem Header="_Validate Files" Command="{Binding ValidateFilesCommand}"/>
-                <MenuItem Header="_Test LLM Connection" Command="{Binding TestLLMCommand}"/>
-                <MenuItem Header="_Check SolidWorks Status" Command="{Binding CheckSolidWorksCommand}"/>
-            </MenuItem>
+
             <MenuItem Header="_View">
                 <MenuItem Header="_Show File Browser" IsCheckable="True" IsChecked="{Binding ShowFileBrowser}"/>
                 <MenuItem Header="_Show Results Panel" IsCheckable="True" IsChecked="{Binding ShowResultsPanel}"/>
@@ -77,14 +73,13 @@
         <!-- Header -->
         <Border Grid.Row="1" Background="#F0F0F0" Padding="20,10">
             <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="21*"/>
+                    <ColumnDefinition Width="319*"/>
+                </Grid.ColumnDefinitions>
                 <TextBlock Text="SolidWorks Assembly Modifier" Style="{StaticResource HeaderTextStyle}" 
-                          HorizontalAlignment="Center" FontSize="24"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="⚙" Width="30" Height="30" Margin="5,0" 
-                            Command="{Binding SettingsCommand}" ToolTip="Settings"/>
-                    <Button Content="?" Width="30" Height="30" 
-                            Command="{Binding HelpCommand}" ToolTip="Help"/>
-                </StackPanel>
+                          HorizontalAlignment="Left" FontSize="24" Grid.Column="1" Margin="423,0,0,10"/>
+
             </Grid>
         </Border>
 
@@ -147,20 +142,17 @@
                                             <Border Padding="5" Margin="2">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
 
-                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" 
-                                                             Margin="0,0,5,0"/>
-                                                    <StackPanel Grid.Column="1">
+                                                    <StackPanel Grid.Column="0">
                                                         <TextBlock Text="{Binding FileName}" FontWeight="Bold"/>
                                                         <TextBlock Text="{Binding FileSize}" FontSize="11" 
-                                                                  Foreground="Gray"/>
+                              Foreground="Gray"/>
                                                     </StackPanel>
-                                                    <Border Grid.Column="2" Style="{StaticResource StatusIndicatorStyle}"
-                                                            Background="{Binding ValidationStatusColor}"/>
+                                                    <Border Grid.Column="1" Style="{StaticResource StatusIndicatorStyle}"
+                        Background="{Binding ValidationStatusColor}"/>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
@@ -178,13 +170,17 @@
                                         <Border Padding="5" Margin="2">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" 
-                                                         Margin="0,0,5,0"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding FileName}"/>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding FileSize}" FontSize="11" 
+                              Foreground="Gray"/>
+                                                </StackPanel>
+                                                <Border Grid.Column="1" Style="{StaticResource StatusIndicatorStyle}"
+                        Background="{Binding ValidationStatusColor}"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -201,13 +197,17 @@
                                         <Border Padding="5" Margin="2">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" 
-                                                         Margin="0,0,5,0"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding FileName}"/>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding FileSize}" FontSize="11" 
+                              Foreground="Gray"/>
+                                                </StackPanel>
+                                                <Border Grid.Column="1" Style="{StaticResource StatusIndicatorStyle}"
+                        Background="{Binding ValidationStatusColor}"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -436,14 +436,18 @@
                             </TabItem>
 
                             <!-- Conflicts -->
-                            <TabItem Header="Conflicts">
+                            <TabItem Header="Conflicts" IsEnabled="False" >
                                 <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="94*"/>
+                                        <ColumnDefinition Width="79*"/>
+                                    </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="*"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
-                                    <ListBox Grid.Row="0" ItemsSource="{Binding Conflicts}">
+                                    <ListBox Grid.Row="0" ItemsSource="{Binding Conflicts}" Grid.ColumnSpan="2">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="#FF6B6B" BorderThickness="1" 
@@ -462,7 +466,7 @@
                                     </ListBox>
 
                                     <!-- Conflict resolution actions -->
-                                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="227,10,0,0" Grid.ColumnSpan="2">
                                         <Button Content="Ignore Conflicts" Command="{Binding IgnoreConflictsCommand}" 
                                                Margin="5" Padding="15,5"/>
                                         <Button Content="Auto-Resolve" Command="{Binding AutoResolveCommand}" 

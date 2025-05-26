@@ -12,6 +12,9 @@ using Microsoft.Win32;
 using SolidWorksSketchViewer.Helpers;
 using SolidWorksSketchViewer.Models;
 using SolidWorksSketchViewer.Services;
+using PdfSharpCore.Pdf;
+using PdfSharpCore.Drawing;
+using ClosedXML.Excel;
 
 namespace SolidWorksSketchViewer.ViewModels
 {
@@ -19,7 +22,6 @@ namespace SolidWorksSketchViewer.ViewModels
     {
         private DispatcherTimer _timer;
         private DateTime _startTime;
-        private Random _random = new Random();
 
         // Services
         private SolidWorksService _solidWorksService;
@@ -415,6 +417,24 @@ namespace SolidWorksSketchViewer.ViewModels
         }
         #endregion
 
+        #region Properties - Temp Folder Management
+        private string _currentTempFolderPath;
+        private bool _isWorkingWithTempFiles = false;
+
+        public string CurrentTempFolderPath
+        {
+            get => _currentTempFolderPath;
+            set => SetProperty(ref _currentTempFolderPath, value);
+        }
+
+        public bool IsWorkingWithTempFiles
+        {
+            get => _isWorkingWithTempFiles;
+            set => SetProperty(ref _isWorkingWithTempFiles, value);
+        }
+        #endregion
+
+
         #region Commands
         // File Commands
         public ICommand BrowseDirectoryCommand { get; private set; }
@@ -426,14 +446,10 @@ namespace SolidWorksSketchViewer.ViewModels
         public ICommand OpenProjectCommand { get; private set; }
         public ICommand SaveProjectCommand { get; private set; }
         public ICommand ExitCommand { get; private set; }
-        public ICommand ValidateFilesCommand { get; private set; }
-        public ICommand TestLLMCommand { get; private set; }
-        public ICommand CheckSolidWorksCommand { get; private set; }
+
         public ICommand ShowDocumentationCommand { get; private set; }
-        public ICommand ShowAPIStatusCommand { get; private set; }
-        public ICommand ShowAboutCommand { get; private set; }
-        public ICommand SettingsCommand { get; private set; }
         public ICommand HelpCommand { get; private set; }
+        public ICommand ShowAboutCommand { get; private set; }
 
         // LLM Processing Commands
         public ICommand ApproveAllCommand { get; private set; }
@@ -465,10 +481,540 @@ namespace SolidWorksSketchViewer.ViewModels
         public ICommand ExportLogCommand { get; private set; }
         #endregion
 
+        #region Temp Folder Management
+
+        private async Task CreateTempWorkspace()
+        {
+            try
+            {
+                StatusMessage = "Creating temporary workspace...";
+                IsLoading = true;
+
+                // Generate unique temp folder name
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string tempFolderName = $"Temp_Assembly_{timestamp}";
+                CurrentTempFolderPath = Path.Combine(WorkingDirectory, tempFolderName);
+
+                // Create temp directory
+                Directory.CreateDirectory(CurrentTempFolderPath);
+
+                // Copy assembly and all referenced files using Pack and Go
+                var copyResult = await Task.Run(() =>
+                    _solidWorksService.CopyAssemblyToFolder(
+                        SelectedAssemblyFile.FilePath,
+                        CurrentTempFolderPath
+                    ));
+
+                if (!copyResult.Success)
+                {
+                    throw new Exception($"Failed to copy assembly: {copyResult.ErrorMessage}");
+                }
+
+                IsWorkingWithTempFiles = true;
+                StatusMessage = "Temporary workspace created successfully";
+            }
+            catch (Exception ex)
+            {
+                CleanupTempFolder();
+                throw new Exception($"Failed to create temp workspace: {ex.Message}");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+
+        private void CleanupTempFolder()
+        {
+            if (string.IsNullOrEmpty(CurrentTempFolderPath) || !Directory.Exists(CurrentTempFolderPath))
+            {
+                CurrentTempFolderPath = null;
+                IsWorkingWithTempFiles = false;
+                return;
+            }
+
+            try
+            {
+                // First attempt - try to delete normally
+                Directory.Delete(CurrentTempFolderPath, true);
+                CurrentTempFolderPath = null;
+                IsWorkingWithTempFiles = false;
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    // Second attempt - try to rename first, then delete
+                    string renamedPath = CurrentTempFolderPath + "_ToDelete_" + DateTime.Now.Ticks;
+                    Directory.Move(CurrentTempFolderPath, renamedPath);
+
+                    try
+                    {
+                        Directory.Delete(renamedPath, true);
+                    }
+                    catch
+                    {
+                        // If we can't delete the renamed folder, at least we freed up the original path
+                        StatusMessage = $"Warning: Could not delete temp folder (renamed to {Path.GetFileName(renamedPath)})";
+                    }
+
+                    CurrentTempFolderPath = null;
+                    IsWorkingWithTempFiles = false;
+                }
+                catch
+                {
+                    // Final catch - just log and clear references
+                    StatusMessage = $"Warning: Could not clean up temp folder: {ex.Message}";
+                    CurrentTempFolderPath = null;
+                    IsWorkingWithTempFiles = false;
+                }
+            }
+        }
+        private void CleanupAllTempFolders()
+        {
+            try
+            {
+                // Clean up any orphaned temp folders from previous sessions
+                if (Directory.Exists(WorkingDirectory))
+                {
+                    var tempFolders = Directory.GetDirectories(WorkingDirectory, "Temp_Assembly_*");
+                    foreach (var folder in tempFolders)
+                    {
+                        try
+                        {
+                            Directory.Delete(folder, true);
+                        }
+                        catch
+                        {
+                            // Skip folders that can't be deleted (might be in use)
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Silent cleanup - don't interrupt application flow
+            }
+        }
+
+        #endregion
+
+
+        #region Export Methods
+
+        private async void ExecuteExportPDF(object parameter)
+        {
+            try
+            {
+                var saveDialog = new SaveFileDialog
+                {
+                    Filter = "PDF Files (*.pdf)|*.pdf",
+                    Title = "Export Change Report as PDF",
+                    FileName = $"{NewAssemblyName}_ChangeReport_{DateTime.Now:yyyyMMdd}.pdf"
+                };
+
+                if (saveDialog.ShowDialog() != true)
+                    return;
+
+                StatusMessage = "Exporting to PDF...";
+                IsLoading = true;
+
+                await Task.Run(() => ExportToPDF(saveDialog.FileName));
+
+                ShowMessage($"PDF report exported successfully to:\n{saveDialog.FileName}");
+            }
+            catch (Exception ex)
+            {
+                ShowMessage($"Export Error: {ex.Message}");
+            }
+            finally
+            {
+                IsLoading = false;
+                StatusMessage = "Ready";
+            }
+        }
+
+        private void ExportToPDF(string fileName)
+        {
+            // Create a new PDF document
+            PdfDocument document = new PdfDocument();
+            document.Info.Title = "SolidWorks Assembly Modification Report";
+            document.Info.Author = "SolidWorks Assembly Modifier";
+            document.Info.Subject = $"Modification Report for {SelectedAssemblyFile?.FileName}";
+
+            // Create first page
+            PdfPage page = document.AddPage();
+            XGraphics gfx = XGraphics.FromPdfPage(page);
+
+            // Define fonts
+            XFont titleFont = new XFont("Arial", 20, XFontStyle.Bold);
+            XFont headingFont = new XFont("Arial", 14, XFontStyle.Bold);
+            XFont normalFont = new XFont("Arial", 11, XFontStyle.Regular);
+            XFont smallFont = new XFont("Arial", 10, XFontStyle.Regular);
+
+            double yPosition = 50;
+            double leftMargin = 50;
+            double pageWidth = page.Width - 100;
+
+            // Title
+            gfx.DrawString("SOLIDWORKS ASSEMBLY MODIFICATION REPORT", titleFont,
+                XBrushes.DarkBlue, new XRect(leftMargin, yPosition, pageWidth, 30),
+                XStringFormats.TopCenter);
+            yPosition += 40;
+
+            // Date and Assembly info
+            gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", normalFont,
+                XBrushes.Black, leftMargin, yPosition);
+            yPosition += 20;
+
+            gfx.DrawString($"Assembly: {SelectedAssemblyFile?.FileName ?? "N/A"}", normalFont,
+                XBrushes.Black, leftMargin, yPosition);
+            yPosition += 30;
+
+            // Modification Summary
+            gfx.DrawString("MODIFICATION SUMMARY", headingFont,
+                XBrushes.DarkBlue, leftMargin, yPosition);
+            yPosition += 25;
+
+            gfx.DrawString(SuccessSummary ?? "No modifications processed", normalFont,
+                XBrushes.Black, leftMargin, yPosition);
+            yPosition += 30;
+
+            // Detailed Changes
+            gfx.DrawString("DETAILED CHANGES", headingFont,
+                XBrushes.DarkBlue, leftMargin, yPosition);
+            yPosition += 25;
+
+            foreach (var change in ChangeSummary)
+            {
+                // Check if we need a new page
+                if (yPosition > page.Height - 100)
+                {
+                    page = document.AddPage();
+                    gfx = XGraphics.FromPdfPage(page);
+                    yPosition = 50;
+                }
+
+                // Draw change details
+                gfx.DrawString($"Feature: {change.Feature}", normalFont,
+                    XBrushes.Black, leftMargin, yPosition);
+                yPosition += 18;
+
+                gfx.DrawString($"  Original: {change.OriginalValue} → New: {change.NewValue}", smallFont,
+                    XBrushes.DarkGray, leftMargin + 20, yPosition);
+                yPosition += 18;
+
+                // Status with color
+                XBrush statusBrush = change.Status == "✓" ? XBrushes.Green : XBrushes.Red;
+                gfx.DrawString($"  Status: {change.Status}", normalFont,
+                    statusBrush, leftMargin + 20, yPosition);
+                yPosition += 25;
+            }
+
+            // Requirements Fulfillment on new page if needed
+            if (yPosition > page.Height - 200)
+            {
+                page = document.AddPage();
+                gfx = XGraphics.FromPdfPage(page);
+                yPosition = 50;
+            }
+
+            gfx.DrawString("REQUIREMENTS FULFILLMENT", headingFont,
+                XBrushes.DarkBlue, leftMargin, yPosition);
+            yPosition += 25;
+
+            foreach (var req in RequirementsFulfillment)
+            {
+                if (yPosition > page.Height - 50)
+                {
+                    page = document.AddPage();
+                    gfx = XGraphics.FromPdfPage(page);
+                    yPosition = 50;
+                }
+
+                XBrush reqBrush = req.StatusIcon == "✓" ? XBrushes.Green :
+                                 req.StatusIcon == "❌" ? XBrushes.Red : XBrushes.Orange;
+
+                gfx.DrawString($"{req.StatusIcon} {req.Requirement}", normalFont,
+                    reqBrush, leftMargin, yPosition);
+                yPosition += 20;
+            }
+
+            // Save the document
+            document.Save(fileName);
+        }
+
+        private async void ExecuteExportExcel(object parameter)
+        {
+            try
+            {
+                var saveDialog = new SaveFileDialog
+                {
+                    Filter = "Excel Files (*.xlsx)|*.xlsx",
+                    Title = "Export Change Report as Excel",
+                    FileName = $"{NewAssemblyName}_ChangeReport_{DateTime.Now:yyyyMMdd}.xlsx"
+                };
+
+                if (saveDialog.ShowDialog() != true)
+                    return;
+
+                StatusMessage = "Exporting to Excel...";
+                IsLoading = true;
+
+                await Task.Run(() => ExportToExcel(saveDialog.FileName));
+
+                ShowMessage($"Excel report exported successfully to:\n{saveDialog.FileName}");
+            }
+            catch (Exception ex)
+            {
+                ShowMessage($"Export Error: {ex.Message}");
+            }
+            finally
+            {
+                IsLoading = false;
+                StatusMessage = "Ready";
+            }
+        }
+
+        private void ExportToExcel(string fileName)
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                // Summary Sheet
+                var summarySheet = workbook.Worksheets.Add("Summary");
+
+                // Title
+                summarySheet.Cell(1, 1).Value = "SOLIDWORKS ASSEMBLY MODIFICATION REPORT";
+                summarySheet.Cell(1, 1).Style.Font.Bold = true;
+                summarySheet.Cell(1, 1).Style.Font.FontSize = 16;
+                summarySheet.Cell(1, 1).Style.Fill.BackgroundColor = XLColor.DarkBlue;
+                summarySheet.Cell(1, 1).Style.Font.FontColor = XLColor.White;
+                summarySheet.Range(1, 1, 1, 4).Merge();
+
+                // Info
+                summarySheet.Cell(3, 1).Value = "Generated:";
+                summarySheet.Cell(3, 2).Value = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+                summarySheet.Cell(4, 1).Value = "Assembly:";
+                summarySheet.Cell(4, 2).Value = SelectedAssemblyFile?.FileName ?? "N/A";
+
+                summarySheet.Cell(5, 1).Value = "Requirements File:";
+                summarySheet.Cell(5, 2).Value = SelectedRequirementsFile?.FileName ?? "N/A";
+
+                summarySheet.Cell(7, 1).Value = "Summary:";
+                summarySheet.Cell(7, 2).Value = SuccessSummary ?? "No modifications processed";
+
+                // Format info section
+                summarySheet.Range(3, 1, 7, 1).Style.Font.Bold = true;
+                summarySheet.Range(3, 1, 7, 2).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+
+                // Change Details Sheet
+                var changesSheet = workbook.Worksheets.Add("Change Details");
+
+                // Headers
+                changesSheet.Cell(1, 1).Value = "Feature";
+                changesSheet.Cell(1, 2).Value = "Original Value";
+                changesSheet.Cell(1, 3).Value = "New Value";
+                changesSheet.Cell(1, 4).Value = "Status";
+
+                // Header formatting
+                var headerRange = changesSheet.Range(1, 1, 1, 4);
+                headerRange.Style.Font.Bold = true;
+                headerRange.Style.Fill.BackgroundColor = XLColor.LightGray;
+                headerRange.Style.Border.BottomBorder = XLBorderStyleValues.Medium;
+
+                // Data
+                int row = 2;
+                foreach (var change in ChangeSummary)
+                {
+                    changesSheet.Cell(row, 1).Value = change.Feature;
+                    changesSheet.Cell(row, 2).Value = change.OriginalValue;
+                    changesSheet.Cell(row, 3).Value = change.NewValue;
+                    changesSheet.Cell(row, 4).Value = change.Status;
+
+                    // Color code status
+                    if (change.Status == "✓")
+                        changesSheet.Cell(row, 4).Style.Font.FontColor = XLColor.Green;
+                    else if (change.Status == "❌")
+                        changesSheet.Cell(row, 4).Style.Font.FontColor = XLColor.Red;
+
+                    row++;
+                }
+
+                // Auto-fit columns
+                changesSheet.Columns().AdjustToContents();
+
+                // Requirements Sheet
+                var reqSheet = workbook.Worksheets.Add("Requirements");
+
+                // Headers
+                reqSheet.Cell(1, 1).Value = "Status";
+                reqSheet.Cell(1, 2).Value = "Requirement";
+
+                // Header formatting
+                reqSheet.Range(1, 1, 1, 2).Style.Font.Bold = true;
+                reqSheet.Range(1, 1, 1, 2).Style.Fill.BackgroundColor = XLColor.LightGray;
+                reqSheet.Range(1, 1, 1, 2).Style.Border.BottomBorder = XLBorderStyleValues.Medium;
+
+                // Data
+                row = 2;
+                foreach (var req in RequirementsFulfillment)
+                {
+                    reqSheet.Cell(row, 1).Value = req.StatusIcon;
+                    reqSheet.Cell(row, 2).Value = req.Requirement;
+
+                    // Color code based on status
+                    if (req.StatusIcon == "✓")
+                    {
+                        reqSheet.Cell(row, 1).Style.Font.FontColor = XLColor.Green;
+                        reqSheet.Cell(row, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F5E9");
+                    }
+                    else if (req.StatusIcon == "❌")
+                    {
+                        reqSheet.Cell(row, 1).Style.Font.FontColor = XLColor.Red;
+                        reqSheet.Cell(row, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFEBEE");
+                    }
+                    else
+                    {
+                        reqSheet.Cell(row, 1).Style.Font.FontColor = XLColor.Orange;
+                        reqSheet.Cell(row, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF3E0");
+                    }
+
+                    row++;
+                }
+
+                // Auto-fit columns
+                reqSheet.Columns().AdjustToContents();
+
+                // Processing Log Sheet
+                var logSheet = workbook.Worksheets.Add("Processing Log");
+
+                row = 1;
+                logSheet.Cell(row++, 1).Value = "AI ANALYSIS STEPS";
+                logSheet.Cell(row - 1, 1).Style.Font.Bold = true;
+
+                foreach (var step in ProcessingSteps)
+                {
+                    logSheet.Cell(row, 1).Value = step.Status;
+                    logSheet.Cell(row, 2).Value = step.Message;
+                    row++;
+                }
+
+                row++;
+                logSheet.Cell(row++, 1).Value = "MODIFICATION JSON";
+                logSheet.Cell(row - 1, 1).Style.Font.Bold = true;
+                logSheet.Cell(row, 1).Value = ModificationJSON;
+                logSheet.Range(row, 1, row, 3).Merge();
+
+                // Auto-fit columns
+                logSheet.Columns().AdjustToContents();
+
+                // Save the workbook
+                workbook.SaveAs(fileName);
+            }
+        }
+        private async void ExecuteExportLog(object parameter)
+        {
+            try
+            {
+                var saveDialog = new SaveFileDialog
+                {
+                    Filter = "Log Files (*.log)|*.log|Text Files (*.txt)|*.txt",
+                    Title = "Export Processing Log",
+                    FileName = $"{NewAssemblyName}_ProcessingLog_{DateTime.Now:yyyyMMdd}"
+                };
+
+                if (saveDialog.ShowDialog() != true)
+                    return;
+
+                StatusMessage = "Exporting processing log...";
+                IsLoading = true;
+
+                await Task.Run(() => ExportProcessingLog(saveDialog.FileName));
+
+                ShowMessage($"Processing log exported successfully to:\n{saveDialog.FileName}");
+            }
+            catch (Exception ex)
+            {
+                ShowMessage($"Export Error: {ex.Message}");
+            }
+            finally
+            {
+                IsLoading = false;
+                StatusMessage = "Ready";
+            }
+        }
+
+        private void ExportProcessingLog(string fileName)
+        {
+            var log = new System.Text.StringBuilder();
+
+            log.AppendLine($"SolidWorks Assembly Modifier - Processing Log");
+            log.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            log.AppendLine($"Session Duration: {ElapsedTime}");
+            log.AppendLine();
+
+            log.AppendLine("FILE INFORMATION");
+            log.AppendLine($"Assembly: {SelectedAssemblyFile?.FilePath ?? "N/A"}");
+            log.AppendLine($"Requirements: {SelectedRequirementsFile?.FilePath ?? "N/A"}");
+            log.AppendLine($"BOM: {SelectedBOMFile?.FilePath ?? "N/A"}");
+            log.AppendLine();
+
+            log.AppendLine("AI ANALYSIS STEPS");
+            foreach (var step in ProcessingSteps)
+            {
+                log.AppendLine($"{step.Status} {step.Message}");
+            }
+            log.AppendLine();
+
+            log.AppendLine("EXTRACTED REQUIREMENTS");
+            foreach (var req in ExtractedRequirements)
+            {
+                log.AppendLine($"- {req.Text} (Type: {req.Type}, Confidence: {req.Confidence}%)");
+            }
+            log.AppendLine();
+
+            log.AppendLine("FEATURE MAPPINGS");
+            foreach (var mapping in FeatureMappings)
+            {
+                log.AppendLine($"- {mapping.Requirement}");
+                log.AppendLine($"  Target: {mapping.TargetFeature}");
+                log.AppendLine($"  Change: {mapping.CurrentValue} → {mapping.NewValue}");
+            }
+            log.AppendLine();
+
+            log.AppendLine("PROCESSING STATUS");
+            foreach (var status in FeatureProcessingStatus)
+            {
+                log.AppendLine($"{status.StatusIcon} {status.FeatureName}: {status.Message} ({status.ProcessingTime})");
+            }
+            log.AppendLine();
+
+            log.AppendLine("MODIFICATION JSON");
+            log.AppendLine(ModificationJSON);
+
+            File.WriteAllText(fileName, log.ToString());
+        }
+
+        #endregion
+
+
         public MainViewModel()
         {
+            // Initialize services - ensure SolidWorks is created on STA thread
+            if (Application.Current != null)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _solidWorksService = new SolidWorksService();
+                });
+            }
+            else
+            {
+                _solidWorksService = new SolidWorksService();
+            }
+
             // Initialize services
-            _solidWorksService = new SolidWorksService();
             _fileService = new FileService();
             _llmService = new LLMService();
             _jsonService = new JsonProcessingService();
@@ -485,6 +1031,10 @@ namespace SolidWorksSketchViewer.ViewModels
             {
                 Task.Run(async () => await RefreshAllFiles());
             }
+
+            // Clean up any orphaned temp folders from previous sessions
+            CleanupAllTempFolders();
+
         }
 
         private void InitializeCollections()
@@ -521,14 +1071,10 @@ namespace SolidWorksSketchViewer.ViewModels
             OpenProjectCommand = new RelayCommand(ExecuteOpenProject);
             SaveProjectCommand = new RelayCommand(ExecuteSaveProject);
             ExitCommand = new RelayCommand(_ => System.Windows.Application.Current.Shutdown());
-            ValidateFilesCommand = new RelayCommand(ExecuteValidateFiles);
-            TestLLMCommand = new RelayCommand(ExecuteTestLLM);
-            CheckSolidWorksCommand = new RelayCommand(ExecuteCheckSolidWorks);
-            ShowDocumentationCommand = new RelayCommand(_ => ShowMessage("Documentation would open here"));
-            ShowAPIStatusCommand = new RelayCommand(_ => ShowMessage("API Status: All systems operational"));
+
+            ShowDocumentationCommand = new RelayCommand(ExecuteShowDocumentation);
+            HelpCommand = new RelayCommand(ExecuteShowHelp); 
             ShowAboutCommand = new RelayCommand(_ => ShowMessage("SolidWorks Assembly Modifier v1.0"));
-            SettingsCommand = new RelayCommand(_ => ShowMessage("Settings dialog would open here"));
-            HelpCommand = new RelayCommand(_ => ShowMessage("Help system would open here"));
 
             // LLM Processing Commands
             ApproveAllCommand = new RelayCommand(ExecuteApproveAll, _ => CanApprove);
@@ -555,9 +1101,9 @@ namespace SolidWorksSketchViewer.ViewModels
 
             // Results Commands
             SaveAssemblyCommand = new RelayCommand(ExecuteSaveAssembly);
-            ExportPDFCommand = new RelayCommand(_ => ShowMessage("Exporting to PDF..."));
-            ExportExcelCommand = new RelayCommand(_ => ShowMessage("Exporting to Excel..."));
-            ExportLogCommand = new RelayCommand(_ => ShowMessage("Exporting processing log..."));
+            ExportPDFCommand = new RelayCommand(ExecuteExportPDF);
+            ExportExcelCommand = new RelayCommand(ExecuteExportExcel);
+            ExportLogCommand = new RelayCommand(ExecuteExportLog);
         }
 
 
@@ -577,6 +1123,26 @@ namespace SolidWorksSketchViewer.ViewModels
         }
 
         #region Command Implementations
+
+        private void ExecuteShowDocumentation(object parameter)
+        {
+            ExecuteShowHelp(parameter); // Same as help
+        }
+
+        private void ExecuteShowHelp(object parameter)
+        {
+            try
+            {
+                var helpWindow = new Views.HelpWindow();
+                helpWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowMessage($"Error opening help: {ex.Message}");
+            }
+        }
+
+
         private void ExecuteBrowseDirectory(object parameter)
         {
             // Using Microsoft.Win32 for WPF compatibility
@@ -705,9 +1271,15 @@ namespace SolidWorksSketchViewer.ViewModels
 
         private async void ExecuteProcessRequirements(object parameter)
         {
+
             CurrentProcessingStage = 1; // Switch to AI Analysis tab
             IsLLMProcessing = true;
             LLMStatusMessage = "Analyzing Requirements with AI...";
+            // Create temp folder and copy files
+            await CreateTempWorkspace();
+
+
+
             ProcessingSteps.Clear();
 
             try
@@ -779,14 +1351,35 @@ namespace SolidWorksSketchViewer.ViewModels
 
             try
             {
-                // Call real SolidWorks service
+                // Ensure we're working with temp files
+                if (IsWorkingWithTempFiles && !string.IsNullOrEmpty(CurrentTempFolderPath))
+                {
+                    string tempAssemblyPath = Path.Combine(CurrentTempFolderPath, SelectedAssemblyFile.FileName);
+
+                    // Close any existing documents and open from temp
+                    await Task.Run(() =>
+                    {
+                        _solidWorksService.CloseAllDocuments();
+                        var assemblyInfo = _solidWorksService.OpenAssembly(tempAssemblyPath);
+
+                        if (assemblyInfo == null)
+                        {
+                            throw new Exception("Failed to open temp assembly for modification");
+                        }
+                    });
+                }
+                else
+                {
+                    throw new Exception("No temporary workspace available. Please restart the process.");
+                }
+
+                // Process modifications
                 var results = await _solidWorksService.ProcessModifications(
                     ModificationJSON,
                     status =>
                     {
                         Application.Current.Dispatcher.Invoke(() =>
                         {
-                            // Find and update existing status or add new
                             var existing = FeatureProcessingStatus.FirstOrDefault(
                                 f => f.FeatureName == status.FeatureName);
 
@@ -802,16 +1395,18 @@ namespace SolidWorksSketchViewer.ViewModels
                                 FeatureProcessingStatus.Add(status);
                             }
 
-                            // Update progress
                             ProcessingProgress = (FeatureProcessingStatus.Count(f =>
                                 f.StatusIcon == "✓" || f.StatusIcon == "❌") * 100.0) /
-                                FeatureMappings.Count;
+                                Math.Max(FeatureMappings.Count, 1);
                         });
                     }
                 );
 
                 // Update results
                 UpdateResultsFromProcessing(results);
+
+                // Move to results tab
+                CurrentProcessingStage = 3;
             }
             catch (Exception ex)
             {
@@ -825,9 +1420,6 @@ namespace SolidWorksSketchViewer.ViewModels
                 CurrentOperation = "";
             }
         }
-
-
-
         private void UpdateResultsFromProcessing(List<ModificationResult> results)
         {
             int successCount = results.Count(r => r.Success);
@@ -944,10 +1536,12 @@ namespace SolidWorksSketchViewer.ViewModels
                 // Add a SaveFileDialog
                 var saveDialog = new SaveFileDialog
                 {
-                    Filter = "SolidWorks Assembly (*.sldasm)|*.sldasm",
-                    Title = "Save Modified Assembly As",
+                    Filter = "Folder Name|*.folder", // This is a trick to let user enter folder name
+                    Title = "Enter Name for Modified Assembly Folder",
                     FileName = $"{NewAssemblyName}_Modified",
-                    InitialDirectory = SaveLocationPath
+                    InitialDirectory = Path.GetDirectoryName(SelectedAssemblyFile.FilePath),
+                    CheckFileExists = false,
+                    CheckPathExists = true
                 };
 
                 if (saveDialog.ShowDialog() != true)
@@ -966,24 +1560,126 @@ namespace SolidWorksSketchViewer.ViewModels
                     Directory.CreateDirectory(saveFolder);
                 }
 
-                // Call save with the user-selected path
-                var saveResult = await Task.Run(() =>
-                    _solidWorksService.SaveAssemblyAs(
-                        savePath,
-                        true  // Copy all referenced files
-                    ));
-
-                if (saveResult.Success)
+                if (IsWorkingWithTempFiles && !string.IsNullOrEmpty(CurrentTempFolderPath))
                 {
-                    string fileList = string.Join("\n", saveResult.SavedFiles.Take(5));
-                    if (saveResult.SavedFiles.Count > 5)
-                        fileList += $"\n... and {saveResult.SavedFiles.Count - 5} more files";
+                    try
+                    {
+                        // First, close all SolidWorks documents to release file locks
+                        await Task.Run(() => _solidWorksService.CloseAllDocuments());
 
-                    ShowMessage($"Assembly saved successfully!\n\nLocation: {saveFolder}\n\nFiles saved:\n{fileList}");
+                        // Small delay to ensure files are released
+                        await Task.Delay(500);
+
+                        // Get destination folder from save dialog
+                        string destinationDir = Path.GetDirectoryName(savePath);
+                        string assemblyNameWithoutExt = Path.GetFileNameWithoutExtension(savePath);
+
+                        // Create a properly named folder for the modified assembly
+                        string finalFolder = Path.Combine(destinationDir, $"{assemblyNameWithoutExt}_Modified_{DateTime.Now:yyyyMMdd_HHmmss}");
+
+                        // Create destination directory
+                        Directory.CreateDirectory(finalFolder);
+
+                        // Copy all files from temp to destination
+                        await Task.Run(() => CopyDirectory(CurrentTempFolderPath, finalFolder));
+
+                        // Clean up temp folder after successful copy
+                        // Clean up temp folder after successful copy
+                        await Task.Delay(500); // Increased delay to ensure files are released
+
+                        // Try multiple times to delete temp folder
+                        int attempts = 0;
+                        bool deleted = false;
+                        string deletionError = "";
+
+                        while (attempts < 3 && !deleted)
+                        {
+                            try
+                            {
+                                // First, ensure any file handles are released
+                                GC.Collect();
+                                GC.WaitForPendingFinalizers();
+                                GC.Collect();
+
+                                // Try to delete the directory
+                                Directory.Delete(CurrentTempFolderPath, true);
+
+                                // If we get here, deletion was successful
+                                CurrentTempFolderPath = null;
+                                IsWorkingWithTempFiles = false;
+                                deleted = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                deletionError = ex.Message;
+                                attempts++;
+
+                                if (attempts < 3)
+                                {
+                                    // Wait longer before next attempt
+                                    await Task.Delay(1000);
+
+                                    // Try to release any locks by closing explorer windows
+                                    try
+                                    {
+                                        // Force garbage collection to release any file handles
+                                        GC.Collect();
+                                        GC.WaitForPendingFinalizers();
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+
+                        // If deletion failed after all attempts, inform the user
+                        if (!deleted && Directory.Exists(CurrentTempFolderPath))
+                        {
+                            // Add to the success message about the temp folder
+                            ShowMessage($"Assembly saved successfully!\n\nLocation: {finalFolder}\n\nAll assembly files have been saved to this folder.\n\n" +
+                                        $"NOTE: Temporary files could not be deleted and remain at:\n{CurrentTempFolderPath}\n" +
+                                        $"Error: {deletionError}\n\n" +
+                                        $"You can manually delete this folder later.");
+
+                            // Still clear the reference so new processing can start
+                            CurrentTempFolderPath = null;
+                            IsWorkingWithTempFiles = false;
+                        }
+                        else
+                        {
+                            // Normal success message
+                            ShowMessage($"Assembly saved successfully!\n\nLocation: {finalFolder}\n\nAll assembly files have been saved to this folder.");
+                        }
+
+                        ShowMessage($"Assembly saved successfully!\n\nLocation: {finalFolder}\n\nAll assembly files have been saved to this folder.");
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowMessage($"Save Error: {ex.Message}\n\nThe temporary files are still available at:\n{CurrentTempFolderPath}");
+                        throw;
+                    }
                 }
                 else
                 {
-                    ShowMessage($"Save failed: {saveResult.ErrorMessage}");
+                    // Original save logic for non-temp workflow
+                    var saveResult = await Task.Run(() =>
+                        _solidWorksService.SaveAssemblyAs(
+                            savePath,
+                            true
+                        ));
+
+
+                    if (saveResult.Success)
+                    {
+                        string fileList = string.Join("\n", saveResult.SavedFiles.Take(5));
+                        if (saveResult.SavedFiles.Count > 5)
+                            fileList += $"\n... and {saveResult.SavedFiles.Count - 5} more files";
+
+                        ShowMessage($"Assembly saved successfully!\n\nLocation: {saveFolder}\n\nFiles saved:\n{fileList}");
+                    }
+                    else
+                    {
+                        ShowMessage($"Save failed: {saveResult.ErrorMessage}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -1103,38 +1799,44 @@ namespace SolidWorksSketchViewer.ViewModels
             }
         }
 
-        private void ExecuteValidateFiles(object parameter)
-        {
-            ShowMessage("Validating all selected files...");
-            // Update validation status colors
-            foreach (var file in AssemblyFiles)
-            {
-                file.ValidationStatusColor = _random.Next(10) > 2 ? "Green" : "Orange";
-            }
-        }
 
-        private async void ExecuteTestLLM(object parameter)
-        {
-            LLMStatus = "Testing...";
-            LLMStatusColor = "Orange";
-            await Task.Delay(2000);
-            LLMStatus = "Connected";
-            LLMStatusColor = "Green";
-            ShowMessage("LLM API connection test successful!");
-        }
-
-        private async void ExecuteCheckSolidWorks(object parameter)
-        {
-            SolidWorksStatus = "Checking...";
-            SolidWorksStatusColor = "Orange";
-            await Task.Delay(1500);
-            SolidWorksStatus = "Connected";
-            SolidWorksStatusColor = "Green";
-            ShowMessage("SolidWorks connection verified!");
-        }
         #endregion
 
         #region Helper Methods
+
+        private void CopyDirectory(string sourceDir, string destDir)
+        {
+            // Create all directories
+            foreach (string dirPath in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(dirPath.Replace(sourceDir, destDir));
+            }
+
+            // Copy all files
+            foreach (string filePath in Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories))
+            {
+                string destFilePath = filePath.Replace(sourceDir, destDir);
+
+                // Try multiple times in case of temporary locks
+                int attempts = 0;
+                while (attempts < 3)
+                {
+                    try
+                    {
+                        File.Copy(filePath, destFilePath, true);
+                        break;
+                    }
+                    catch (IOException)
+                    {
+                        attempts++;
+                        if (attempts >= 3)
+                            throw;
+                        System.Threading.Thread.Sleep(500);
+                    }
+                }
+            }
+        }
+
         private async void UpdateAssemblyPreview()
         {
             if (SelectedAssemblyFile != null)
@@ -1144,7 +1846,8 @@ namespace SolidWorksSketchViewer.ViewModels
                     IsLoading = true;
                     StatusMessage = "Opening assembly...";
 
-                    // Open real assembly
+                    // Always use original file for preview
+                    // Temp files are only created when processing starts
                     var assemblyInfo = await Task.Run(() =>
                         _solidWorksService.OpenAssembly(SelectedAssemblyFile.FilePath));
 
@@ -1156,8 +1859,8 @@ namespace SolidWorksSketchViewer.ViewModels
                         AssemblyFileSize = SelectedAssemblyFile.FileSize;
                         AssemblyThumbnail = assemblyInfo.ThumbnailPath;
 
-                        // Store features for later use
-                        _currentAssemblyFeatures = assemblyInfo.Features;
+                        // Store features for later use - Initialize if null
+                        _currentAssemblyFeatures = assemblyInfo.Features ?? new List<string>();
                     });
 
                     StatusMessage = "Assembly loaded successfully";
@@ -1165,6 +1868,8 @@ namespace SolidWorksSketchViewer.ViewModels
                 catch (Exception ex)
                 {
                     StatusMessage = $"Failed to open assembly: {ex.Message}";
+                    // Initialize to empty list to prevent null errors
+                    _currentAssemblyFeatures = new List<string>();
                 }
                 finally
                 {
@@ -1173,7 +1878,6 @@ namespace SolidWorksSketchViewer.ViewModels
                 }
             }
         }
-
         private void UpdateSaveLocation()
         {
             if (!string.IsNullOrEmpty(WorkingDirectory) && !string.IsNullOrEmpty(NewAssemblyName))
@@ -1274,10 +1978,33 @@ namespace SolidWorksSketchViewer.ViewModels
         }
         #endregion
 
+
+
+        private string GetUniqueDirectoryName(string basePath)
+        {
+            string directory = basePath;
+            int counter = 1;
+
+            while (Directory.Exists(directory))
+            {
+                directory = $"{basePath}_{counter}";
+                counter++;
+            }
+
+            return directory;
+        }
+
+
         public void Cleanup()
         {
             _timer?.Stop();
+
+            // Clean up temp folder if exists
+            CleanupTempFolder();
+
             _solidWorksService?.Dispose();
         }
+
+
     }
 }

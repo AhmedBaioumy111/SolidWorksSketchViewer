@@ -7,7 +7,6 @@ namespace SolidWorksSketchViewer.Models
     // Base class for all file items
     public class FileItemModel : INotifyPropertyChanged
     {
-        private bool _isSelected;
         private string _validationStatusColor = "Green";
 
         public string FileName { get; set; }
@@ -15,15 +14,6 @@ namespace SolidWorksSketchViewer.Models
         public string FileSize { get; set; }
         public DateTime LastModified { get; set; }
 
-        public bool IsSelected
-        {
-            get => _isSelected;
-            set
-            {
-                _isSelected = value;
-                OnPropertyChanged();
-            }
-        }
 
         public string ValidationStatusColor
         {
