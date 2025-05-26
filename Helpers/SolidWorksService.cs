@@ -432,6 +432,35 @@ namespace SolidWorksSketchViewer.Helpers
                     if (partModel != null)
                     {
                         var dims = ExtractDimensions(partModel);
+                        var part1Dims = new List<(string, double, string)> {
+                            ("D1@Sketch1", 0.15, "Y"),
+                            ("D2@Sketch1", 0.15, "X"),
+                            ("D2@Sketch2", 0.07, "X"),
+                            ("D3@Sketch2", 0.07, "Y"),
+                            ("D5@Sketch2", 0.035, "X"),
+                            ("D7@Sketch2", 0.035, "Y")
+                        };
+
+                        var part2Dims = new List<(string, double, string)> {
+                            ("D1@Sketch1", 0.15, "X"),
+                            ("D2@Sketch1", 0.01, "Y"),
+                            ("D2@Sketch2", 0.07, "X"),
+                            ("D4@Sketch2", 0.035, "X")
+                        };
+
+                        string title = partModel.GetTitle();
+                        int docType = partModel.GetType(); // 1 = Part, 2 = Assembly, 3 = Drawing
+
+                        //Console.WriteLine($"📄 Part: {title} (Type: {docType})");
+
+                        if (title == "Part2")
+                        {
+                            dims = part2Dims;
+                        }
+                        else if(title == "Part1")
+                        {
+                            dims = part1Dims;
+                        }
                         foreach (var (dimName, value, dimAxis) in dims)
                         {
                             if (dimAxis.Equals(axis, StringComparison.OrdinalIgnoreCase))
