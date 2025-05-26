@@ -26,8 +26,8 @@ namespace SolidWorksSketchViewer.Services
                 }
 
                 // Get all assembly files
-                var assemblyFiles = Directory.GetFiles(directoryPath, "*.sldasm", SearchOption.AllDirectories)
-                    .Union(Directory.GetFiles(directoryPath, "*.SLDASM", SearchOption.AllDirectories));
+                var assemblyFiles = Directory.GetFiles(directoryPath, "*.sldasm", SearchOption.TopDirectoryOnly)
+                    .Union(Directory.GetFiles(directoryPath, "*.SLDASM", SearchOption.TopDirectoryOnly));
 
                 foreach (var file in assemblyFiles)
                 {
@@ -64,9 +64,9 @@ namespace SolidWorksSketchViewer.Services
                     return files;
 
                 // Get Excel and CSV files
-                var bomFiles = Directory.GetFiles(directoryPath, "*.xlsx", SearchOption.AllDirectories)
-                    .Union(Directory.GetFiles(directoryPath, "*.xls", SearchOption.AllDirectories))
-                    .Union(Directory.GetFiles(directoryPath, "*.csv", SearchOption.AllDirectories));
+                var bomFiles = Directory.GetFiles(directoryPath, "*.xlsx", SearchOption.TopDirectoryOnly)
+                    .Union(Directory.GetFiles(directoryPath, "*.xls", SearchOption.TopDirectoryOnly))
+                    .Union(Directory.GetFiles(directoryPath, "*.csv", SearchOption.TopDirectoryOnly));
 
                 foreach (var file in bomFiles)
                 {
@@ -102,9 +102,9 @@ namespace SolidWorksSketchViewer.Services
                     return files;
 
                 // Get text, Word, and JSON files
-                var reqFiles = Directory.GetFiles(directoryPath, "*.txt", SearchOption.AllDirectories)
-                    .Union(Directory.GetFiles(directoryPath, "*.docx", SearchOption.AllDirectories))
-                    .Union(Directory.GetFiles(directoryPath, "*.json", SearchOption.AllDirectories));
+                var reqFiles = Directory.GetFiles(directoryPath, "*.txt", SearchOption.TopDirectoryOnly)
+                    .Union(Directory.GetFiles(directoryPath, "*.docx", SearchOption.TopDirectoryOnly))
+                    .Union(Directory.GetFiles(directoryPath, "*.json", SearchOption.TopDirectoryOnly));
 
                 foreach (var file in reqFiles)
                 {

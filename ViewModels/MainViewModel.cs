@@ -209,7 +209,11 @@ namespace SolidWorksSketchViewer.ViewModels
         public bool IsLLMProcessing
         {
             get => _isLLMProcessing;
-            set => SetProperty(ref _isLLMProcessing, value);
+            set
+            {
+                SetProperty(ref _isLLMProcessing, value);
+                OnPropertyChanged(nameof(CanApprove)); // Add this line
+            }
         }
 
         public string LLMStatusMessage
@@ -1310,6 +1314,8 @@ namespace SolidWorksSketchViewer.ViewModels
                     ExtractedRequirements.Clear();
                     foreach (var req in result.ExtractedRequirements)
                         ExtractedRequirements.Add(req);
+                    Console.WriteLine($"Added {ExtractedRequirements.Count} requirements");
+
 
                     FeatureMappings.Clear();
                     foreach (var mapping in result.FeatureMappings)
@@ -1320,6 +1326,8 @@ namespace SolidWorksSketchViewer.ViewModels
                         Conflicts.Add(conflict);
 
                     ModificationJSON = result.ModificationJSON;
+
+                    OnPropertyChanged(nameof(CanApprove));
                 });
 
                 IsLLMProcessing = false;
@@ -1506,6 +1514,7 @@ namespace SolidWorksSketchViewer.ViewModels
             ExtractedRequirements.Clear();
             FeatureMappings.Clear();
             Conflicts.Clear();
+            OnPropertyChanged(nameof(CanApprove));
             ExecuteProcessRequirements(null);
         }
 
